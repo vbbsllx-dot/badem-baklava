@@ -23,18 +23,6 @@ export const PromoCarousel: React.FC = () => {
   const [banners, setBanners] = useState<BannerItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const defaultBanners: BannerItem[] = [
-    {
-      title_en: "ROYAL SARMA.\nPURE PISTACHIO.",
-      title_ar: "سارما ملكية.\nفستق عنتاب خالص.",
-      subtitle_en: "Royal green rolls with over 85% pure Antep pistachios.",
-      subtitle_ar: "رولات خضراء فاخرة بأكثر من 85% من فستق عنتاب النقي.",
-      tag_en: "Special Offer",
-      tag_ar: "عرض حصري",
-      image_url: "https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?q=80&w=800&auto=format&fit=crop",
-    },
-  ];
-
   useEffect(() => {
     const fetchBanners = async () => {
       try {
@@ -46,25 +34,29 @@ export const PromoCarousel: React.FC = () => {
         if (data && data.length > 0 && !error) {
           setBanners(data);
         } else {
-          setBanners(defaultBanners);
+          setBanners([]);
         }
       } catch {
-        setBanners(defaultBanners);
+        setBanners([]);
       }
     };
     fetchBanners();
   }, []);
 
-  const activeBanners = banners.length > 0 ? banners : defaultBanners;
-  const current = activeBanners[currentIndex] || activeBanners[0];
-
   useEffect(() => {
-    if (activeBanners.length <= 1) return;
+    if (banners.length <= 1) return;
     const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % activeBanners.length);
+      setCurrentIndex((prev) => (prev + 1) % banners.length);
     }, 6000);
     return () => clearInterval(interval);
-  }, [activeBanners.length]);
+  }, [banners.length]);
+
+  // الشرط تم نقله إلى هنا (بعد جميع الـ Hooks لتجنب أي أخطاء في الـ Render)
+  if (banners.length === 0) {
+    return null;
+  }
+
+  const current = banners[currentIndex] || banners[0];
 
   const scrollToMenu = () => {
     const el = document.getElementById("categories-section") || document.getElementById("menu-section") || document.getElementById("products");
@@ -110,20 +102,22 @@ export const PromoCarousel: React.FC = () => {
           </div>
 
           {/* 2. إطار صورة المنتج الثابت والمتناسق */}
-          <div className="w-28 sm:w-48 md:w-64 h-28 sm:h-48 md:h-64 rounded-xl sm:rounded-2xl overflow-hidden shadow-lg border border-white/10 shrink-0 bg-black/20">
-            <img
-              src={current.image_url || "/hero-baklava.png"}
-              alt={isAr ? current.title_ar : current.title_en}
-              className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
-            />
-          </div>
+          {current.image_url && (
+            <div className="w-28 sm:w-48 md:w-64 h-28 sm:h-48 md:h-64 rounded-xl sm:rounded-2xl overflow-hidden shadow-lg border border-white/10 shrink-0 bg-black/20">
+              <img
+                src={current.image_url}
+                alt={isAr ? current.title_ar : current.title_en}
+                className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
+              />
+            </div>
+          )}
 
         </div>
 
         {/* 3. مؤشرات التنقل السفلية */}
-        {activeBanners.length > 1 && (
+        {banners.length > 1 && (
           <div className="flex items-center justify-center gap-1.5 pt-3 sm:pt-4">
-            {activeBanners.map((_, idx) => (
+            {banners.map((_, idx) => (
               <button
                 key={idx}
                 onClick={() => setCurrentIndex(idx)}

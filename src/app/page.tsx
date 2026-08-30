@@ -97,8 +97,7 @@ const { setIsRewardsOpen } = useUser();
   });
 
   return (
-    <div className="min-h-screen bg-[#F4ECE1] text-[#2D2321] pb-28 md:pb-28 flex flex-col justify-between font-sans">
-      
+<div className="min-h-screen bg-[#F4ECE1] text-[#2D2321] pb-28 md:pb-0 flex flex-col justify-between font-sans">      
       {/* Header Navbar */}
       <Navbar />
 

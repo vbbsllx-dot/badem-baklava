@@ -13,10 +13,9 @@ export const BottomNav: React.FC = () => {
 
   return (
     <nav className="fixed z-40 bg-[#FAF5ED]/95 backdrop-blur-md border border-[#4A0E17]/15 shadow-2xl transition-all duration-300
-      /* للموبايل: ملتصق بالأسفل بالكامل */
-      bottom-0 left-0 right-0 px-4 py-2 border-t rounded-t-2xl flex items-center justify-around
-      /* للكمبيوتر واللابتوب: شريط عائم وفاخر في المنتصف */
-      md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-md md:rounded-3xl md:px-6 md:py-2.5 md:shadow-[0_15px_35px_rgba(74,14,23,0.18)]"
+      /* أضفنا md:hidden هنا لكي يختفي تماماً على أجهزة الكمبيوتر ويظهر على الموبايل فقط */
+      md:hidden
+      bottom-0 left-0 right-0 px-4 py-2 border-t rounded-t-2xl flex items-center justify-around"
     >
       
       {/* 1. الرئيسية (Home) */}
