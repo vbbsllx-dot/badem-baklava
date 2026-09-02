@@ -5,11 +5,12 @@ import {
   Plus, Trash2, Edit3, Package, Tag, Image as ImageIcon, 
   ShoppingBag, Layers, RefreshCw, Lock, KeyRound, LogOut, 
   Upload, Volume2, Loader2, Sparkles, Award, Coins, Wand2, 
-  Check, ShieldCheck, Calendar, Users, DollarSign, CheckCircle2, Clock, Medal, User, AlertTriangle
+  Check, ShieldCheck, Calendar, Users, DollarSign, CheckCircle2, Clock, Medal, User, AlertTriangle,
+  PackagePlus
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
 import { OrdersManager } from "./OrdersManager";
-
+import { BoxBuilderSettings } from "./BoxBuilderSettings";
 // =========================================================================
 // 🌟 القسم الأول: المحركات الذكية، الترجمة الفورية، والأدوات المساعدة
 // =========================================================================
@@ -119,7 +120,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"orders" | "categories" | "products" | "banners" | "coupons" | "loyalty">("orders");
+  const [activeTab, setActiveTab] = useState<"orders" | "categories" | "products" | "banners" | "coupons" | "loyalty" | "box_settings" >("orders");
 
   const [categories, setCategories] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -716,6 +717,7 @@ export default function AdminDashboard() {
             { id: "banners", label: `العروض والبانرات (${banners.length})`, icon: ImageIcon },
             { id: "coupons", label: `الكوبونات والأمان 🛡️ (${coupons.length})`, icon: Tag },
             { id: "loyalty", label: `نقاط المكافآت  (${loyaltyRewards.length})`, icon: Award },
+            { id: "box_settings", label: "خدمة البوكسات 📦", icon: PackagePlus }, // 🌟 هذا هو السطر الناقص!
           ].map((tab) => {
             const Icon = tab.icon;
             return (
@@ -854,6 +856,13 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+
+        {/* 🌟 هذا الجزء سليم 100% اتركه كما هو */}
+{activeTab === "box_settings" && (
+  <div className="pt-2">
+    <BoxBuilderSettings />
+  </div>
+)}
 
         {/* 3️⃣ تبويب إدارة المنتجات */}
         {activeTab === "products" && (
@@ -1084,6 +1093,7 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+
 
         {/* 4️⃣ تبويب إدارة العروض والبانرات */}
         {activeTab === "banners" && (

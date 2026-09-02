@@ -2,8 +2,9 @@
 
 import React, { useState } from "react";
 import { 
-  ShoppingBag, TrendingUp, Package, Tag, Printer, X, FileSpreadsheet, Download, 
-  CalendarClock, DollarSign, Phone, MapPin, User, Gift, ExternalLink, CheckCircle2 
+  ShoppingBag, Package, Tag, Printer, X, FileSpreadsheet, Download, 
+  CalendarClock, DollarSign, Phone, MapPin, User, Gift, ExternalLink, 
+  Trash2, Pencil, CheckCircle2 
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
 
@@ -21,11 +22,61 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
   fetchData,
 }) => {
   const [selectedOrderForPrint, setSelectedOrderForPrint] = useState<any | null>(null);
+  const [editingOrder, setEditingOrder] = useState<any | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // تحديث حالة الطلب
+  // تحديث حالة الطلب السريعة
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     await supabase.from("orders").update({ status }).eq("id", orderId);
     await fetchData();
+  };
+
+  // حذف الطلب نهائياً
+  const handleDeleteOrder = async (orderId: string) => {
+    const isConfirmed = window.confirm("هل أنت متأكد من حذف هذا الطلب نهائياً من قاعدة البيانات؟");
+    if (!isConfirmed) return;
+
+    try {
+      const { error } = await supabase.from("orders").delete().eq("id", orderId);
+      if (error) throw error;
+      await fetchData();
+      alert("تم حذف الطلب بنجاح ✅");
+    } catch (err: any) {
+      alert("حدث خطأ أثناء الحذف: " + err.message);
+    }
+  };
+
+  // حفظ التعديلات الشاملة للطلب
+  const handleSaveOrderChanges = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrder) return;
+    setIsProcessing(true);
+
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          customer_name: editingOrder.customer_name,
+          customer_phone: editingOrder.customer_phone,
+          city: editingOrder.city,
+          district: editingOrder.district,
+          street: editingOrder.street,
+          total_amount: editingOrder.total_amount,
+          status: editingOrder.status,
+          notes: editingOrder.notes,
+        })
+        .eq("id", editingOrder.id);
+
+      if (error) throw error;
+
+      await fetchData();
+      setEditingOrder(null);
+      alert("تم تحديث بيانات الطلب بنجاح ✅");
+    } catch (err: any) {
+      alert("حدث خطأ أثناء التحديث: " + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // 📊 تصدير ملف Excel بتنسيق XML/HTML ومن اليمين لليسار
@@ -181,7 +232,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
         </div>
       </div>
 
-      {/*  صندوق تصدير Excel */}
+      {/* صندوق تصدير Excel */}
       <div className="bg-gradient-to-r from-white via-[#FAF5ED] to-white p-5 rounded-3xl border border-[#C59B27]/30 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-[#4A0E17] text-[#E5C058] flex items-center justify-center shadow-md border border-[#C59B27]/40 shrink-0">
@@ -220,7 +271,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
           orders.map((ord) => (
             <div key={ord.id} className="bg-white rounded-3xl border border-stone-200/80 shadow-2xs overflow-hidden transition hover:border-[#4A0E17]/30">
               
-              {/* رأس البطاقة (رقم الطلب + الحالة + زر الطباعة) */}
+              {/* رأس البطاقة (رقم الطلب + الحالة + الأزرار: تعديل، طباعة، حذف) */}
               <div className="bg-[#FAF5ED] px-6 py-4 border-b border-stone-200/60 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-sm font-black text-[#4A0E17] bg-white px-3 py-1 rounded-xl border border-stone-200 shadow-2xs">
@@ -237,15 +288,37 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center flex-wrap gap-2">
+                  {/* زر تعديل الطلب */}
+                  <button
+                    onClick={() => setEditingOrder({ ...ord })}
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition"
+                    title="تعديل بيانات الطلب"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-blue-600" />
+                    <span>تعديل</span>
+                  </button>
+
+                  {/* زر طباعة الفاتورة */}
                   <button 
                     onClick={() => setSelectedOrderForPrint(ord)} 
-                    className="px-3.5 py-1.5 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold flex items-center gap-1.5 text-stone-700 shadow-2xs cursor-pointer transition"
+                    className="px-3 py-1.5 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold flex items-center gap-1.5 text-stone-700 shadow-2xs cursor-pointer transition"
                   >
                     <Printer className="w-3.5 h-3.5 text-[#C59B27]" />
                     <span>طباعة الفاتورة</span>
                   </button>
 
+                  {/* زر حذف الطلب */}
+                  <button
+                    onClick={() => handleDeleteOrder(ord.id)}
+                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition"
+                    title="حذف الطلب نهائياً"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                    <span>حذف</span>
+                  </button>
+
+                  {/* قائمة تغيير الحالة */}
                   <select
                     value={ord.status}
                     onChange={(e) => handleUpdateOrderStatus(ord.id, e.target.value)}
@@ -259,10 +332,8 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                 </div>
               </div>
 
-              {/* جسم البطاقة (معلومات العميل والموقع + تفاصيل المنتجات) */}
+              {/* جسم البطاقة */}
               <div className="p-6 space-y-4">
-                
-                {/* تفاصيل العميل والموقع في بطاقة مصغرة */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-[#FAF5ED]/50 p-4 rounded-2xl border border-stone-200/40 text-xs">
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2 text-stone-800 font-bold">
@@ -297,7 +368,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                   </div>
                 </div>
 
-                {/* تفاصيل قائمة المنتجات (Menu Style) */}
+                {/* تفاصيل قائمة المنتجات */}
                 <div className="space-y-2">
                   <span className="text-[11px] font-black text-stone-400 uppercase tracking-wider block">المنتجات المطلوبة:</span>
                   <div className="divide-y divide-stone-100 border border-stone-200/60 rounded-2xl overflow-hidden bg-white">
@@ -320,17 +391,16 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                   </div>
                 </div>
 
-                {/* ملاحظات إضافية أو إهداء */}
+                {/* ملاحظات إضافية */}
                 {ord.notes && !ord.notes.includes("https://") && (
                   <div className="text-xs bg-amber-50/80 p-3 rounded-2xl border border-amber-200/60 text-amber-900 flex items-start gap-2">
                     <span className="font-bold">ملاحظات العميل:</span>
                     <span className="flex-1">{ord.notes}</span>
                   </div>
                 )}
-
               </div>
 
-              {/* ذيل البطاقة (طريقة الدفع وإجمالي المبلغ) */}
+              {/* ذيل البطاقة */}
               <div className="bg-[#FAF5ED]/80 px-6 py-4 border-t border-stone-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <span className="text-stone-500 font-medium">
                   طريقة الدفع: <strong className="text-stone-800 uppercase">{ord.payment_method}</strong>
@@ -345,6 +415,141 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
           ))
         )}
       </div>
+
+      {/* ✏️ نافذة تعديل بيانات الطلب المنبثقة (Edit Modal) */}
+      {editingOrder && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-[#4A0E17]/20 space-y-5 text-[#2D2321] relative max-h-[90vh] overflow-y-auto">
+            
+            <div className="flex items-center justify-between border-b border-stone-200 pb-4">
+              <div>
+                <h3 className="text-lg font-black text-[#4A0E17]">تعديل بيانات الطلب #{editingOrder.id}</h3>
+                <p className="text-xs text-stone-400 mt-0.5">قم بتحديث معلومات العميل أو العنوان أو إجمالي الحساب</p>
+              </div>
+              <button 
+                onClick={() => setEditingOrder(null)}
+                className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center hover:bg-stone-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOrderChanges} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">اسم العميل:</label>
+                  <input
+                    type="text"
+                    value={editingOrder.customer_name || ""}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, customer_name: e.target.value })}
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17] font-bold"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">رقم الجوال:</label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={editingOrder.customer_phone || ""}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, customer_phone: e.target.value })}
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17] font-mono text-right"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">المدينة:</label>
+                  <input
+                    type="text"
+                    value={editingOrder.city || ""}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, city: e.target.value })}
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">الحي:</label>
+                  <input
+                    type="text"
+                    value={editingOrder.district || ""}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, district: e.target.value })}
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">الشارع وتفاصيل العنوان:</label>
+                <input
+                  type="text"
+                  value={editingOrder.street || ""}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, street: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">المبلغ الإجمالي (ر.س):</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editingOrder.total_amount || 0}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, total_amount: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17] font-black text-[#4A0E17]"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">حالة الطلب:</label>
+                  <select
+                    value={editingOrder.status || "pending"}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, status: e.target.value })}
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17] font-bold"
+                  >
+                    <option value="pending">⏳ قيد الانتظار</option>
+                    <option value="baking">🔥 في الفرن والتجهيز</option>
+                    <option value="delivering">🚚 مع المندوب</option>
+                    <option value="completed">✅ مكتمل ومسلم</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">الملاحظات ورابط الموقع:</label>
+                <textarea
+                  rows={2}
+                  value={editingOrder.notes || ""}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, notes: e.target.value })}
+                  className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stone-200">
+                <button
+                  type="button"
+                  onClick={() => setEditingOrder(null)}
+                  className="px-5 py-2.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs font-bold transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="px-6 py-2.5 rounded-xl bg-[#4A0E17] hover:bg-[#36070E] text-white text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isProcessing ? "جاري الحفظ..." : "حفظ التعديلات"}</span>
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
 
       {/* 🖨️ نافذة طباعة الفاتورة الفاخرة (Receipt Modal) */}
       {selectedOrderForPrint && (

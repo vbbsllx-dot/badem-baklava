@@ -135,7 +135,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
     );
   };
 
-  // 🛡️ دالة التحقق الذكي والصارم من شروط الكوبون (الحد الأدنى، الانتهاء، ومرة لكل جوال)
+  // 🛡️ دالة التحقق الذكي والصارم من شروط الكوبون
   const validateCouponSecurity = async (phoneToCheck: string): Promise<boolean> => {
     if (!appliedCouponCode) return true;
 
@@ -161,7 +161,6 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
         return false;
       }
 
-      // التحقق من الحد الأدنى لقيمة السلة (مثل 100 ريال)
       if (couponData.min_order_amount && subtotal < Number(couponData.min_order_amount)) {
         setCouponWarning(
           isAr 
@@ -171,7 +170,6 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
         return false;
       }
 
-      // فحص قيد "مرة واحدة لكل رقم جوال" بدقة في جدول الطلبات
       if (couponData.one_per_customer) {
         const { data: previousOrders, error: orderErr } = await supabase
           .from("orders")
@@ -202,7 +200,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
     }
   };
 
- const handleProceedToPayment = async (e: React.FormEvent) => {
+  const handleProceedToPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName.trim() || !phone.trim() || !district.trim()) {
       alert(isAr ? "يرجى تعبئة كافة الحقول المطلوبة." : "Please fill in all required fields.");
@@ -212,11 +210,9 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
     setUserName(customerName.trim());
     setUserPhone(phone.trim());
 
-    // 🛡️ فحص صلاحية الكوبون والشروط الأمنية بدقة
     const isValid = await validateCouponSecurity(phone.trim());
     
     if (!isValid) {
-      // 💡 الحل العلمي: إظهار رسالة احترافية للعميل توضح سبب إلغاء الكوبون بناءً على نوع المشكلة
       const rejectionReason = couponWarning || (isAr ? "كود الخصم غير صالح أو لم يعد مستوفياً للشروط." : "Coupon is invalid.");
       
       alert(
@@ -225,7 +221,6 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
           : `⚠️ Notice:\n${rejectionReason}\n\nThe coupon will be removed to let you proceed.`
       );
 
-      // 🧹 إلغاء الكوبون وإعادة تعيين السلة آلياً
       try {
         if (cartContext && cartContext.removeCoupon) {
           cartContext.removeCoupon();
@@ -235,20 +230,20 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
       }
 
       setCouponWarning(null);
-      return; // إيقاف الانتقال لخطوة الدفع حتى يرى العميل التنبيه ويستمر بالطلب العادي
+      return;
     }
 
-    // إذا كان الكوبون سليم 100%، ننتقل مباشرة لخطوة الدفع الفاخرة
     setCurrentStep("payment");
   };
-  // 📲 صياغة وإرسال رسالة الواتساب
+
+  // 📲 صياغة وإرسال رسالة الواتساب بدقة تشمل تفاصيل البوكس
   const sendWhatsAppOrder = (generatedId: string, finalTotal: number, itemsToPrint: any[]) => {
     const cleanPhone = STORE_WHATSAPP_NUMBER.replace(/[^0-9]/g, "");
 
     const itemsText = itemsToPrint
       .map(
         (item: any, idx: number) =>
-          `  ${idx + 1}. *${item.title}* (${item.portion || item.portionNote || "افتراضي"}) \n     العدد: ${item.quantity} | السعر: ${(item.price * item.quantity).toFixed(2)} ر.س`
+          `  ${idx + 1}. *${item.title}* \n     ${item.portion ? `• ${item.portion}\n     ` : ""}العدد: ${item.quantity} | السعر: ${(item.price * item.quantity).toFixed(2)} ر.س`
       )
       .join("\n");
 
@@ -292,7 +287,7 @@ ${itemsText}
     window.open(encodedUrl, "_blank");
   };
 
-  // ✅ تأكيد الطلب وحفظه في Supabase بشكل آمن ضد التلاعب بالأسعار مع تسجيل الكود في الملاحظات
+  // ✅ تأكيد الطلب مع التحقق الصارم من المنتجات والبوكسات المخصصة
   const handleConfirmOrder = async () => {
     setIsProcessing(true);
 
@@ -301,24 +296,75 @@ ${itemsText}
 
     try {
       for (const cartItem of cart) {
-        const { data: dbProduct } = await supabase
-          .from("products")
-          .select("base_price, title_ar")
-          .eq("title_ar", cartItem.title)
-          .single();
+        // 🔒 1. فحص البوكس المخصص (Custom Box Security Check)
+        if (cartItem.type === "custom_box" || cartItem.tierId) {
+          let officialBoxPrice = Number(cartItem.price);
+          let officialCapacity = 0;
 
-        const officialPrice = dbProduct ? Number(dbProduct.base_price) : Number(cartItem.price);
-        const itemTotal = officialPrice * Number(cartItem.quantity);
+          // جلب السعر وسعة البوكس المعتمدة من جدول custom_box_tiers
+          const { data: tierData } = await supabase
+            .from("custom_box_tiers")
+            .select("price, capacity, name_ar")
+            .eq("id", cartItem.tierId)
+            .single();
 
-        verifiedSubtotal += itemTotal;
-        verifiedItems.push({
-          title: cartItem.title,
-          portion: cartItem.portionNote || "افتراضي",
-          quantity: cartItem.quantity,
-          price: officialPrice,
-        });
+          if (tierData) {
+            officialBoxPrice = Number(tierData.price);
+            officialCapacity = Number(tierData.capacity);
+          } else {
+            // التحقق الاحتياطي بالأسعار والسعات الافتراضية
+            const fallbackTiers: Record<string, { price: number; capacity: number }> = {
+              box_500g: { price: 45, capacity: 4 },
+              box_1000g: { price: 85, capacity: 8 },
+              box_1500g: { price: 125, capacity: 12 },
+            };
+            if (fallbackTiers[cartItem.tierId]) {
+              officialBoxPrice = fallbackTiers[cartItem.tierId].price;
+              officialCapacity = fallbackTiers[cartItem.tierId].capacity;
+            }
+          }
+
+          // التحقق من أن عدد القطع المختارة يطابق سعة البوكس المحددة
+          if (Array.isArray(cartItem.items) && officialCapacity > 0) {
+            const totalPieces = cartItem.items.reduce((sum: number, it: any) => sum + Number(it.quantity || 0), 0);
+            if (totalPieces !== officialCapacity) {
+              throw new Error(`سعة البوكس غير مكتملة (${totalPieces} من أصل ${officialCapacity} قطع).`);
+            }
+          }
+
+          const boxItemTotal = officialBoxPrice * Number(cartItem.quantity || 1);
+          verifiedSubtotal += boxItemTotal;
+          verifiedItems.push({
+            title: cartItem.title,
+            portion: cartItem.portion || cartItem.summaryText || "تشكيلة مخصصة",
+            portionNote: cartItem.portionNote || `بوكس مخصص (${officialCapacity} قطع)`,
+            quantity: Number(cartItem.quantity || 1),
+            price: officialBoxPrice,
+            is_custom_box: true,
+          });
+        } 
+        // 🔒 2. فحص المنتجات العادية
+        else {
+          const { data: dbProduct } = await supabase
+            .from("products")
+            .select("base_price, title_ar")
+            .eq("title_ar", cartItem.title)
+            .single();
+
+          const officialPrice = dbProduct ? Number(dbProduct.base_price) : Number(cartItem.price);
+          const itemTotal = officialPrice * Number(cartItem.quantity);
+
+          verifiedSubtotal += itemTotal;
+          verifiedItems.push({
+            title: cartItem.title,
+            portion: cartItem.portionNote || cartItem.portion || "افتراضي",
+            quantity: cartItem.quantity,
+            price: officialPrice,
+          });
+        }
       }
 
+      // فحص الكوبون وتطبيق الخصم الحقيقي
       let verifiedDiscount = 0;
       if (appliedCouponCode) {
         const { data: couponData } = await supabase
@@ -408,10 +454,10 @@ ${itemsText}
       }
 
       clearCart();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Secure order processing error:", err);
       setIsProcessing(false);
-      alert(isAr ? "حدث خطأ أثناء معالجة الطلب، يرجى المحاولة مرة أخرى." : "Error processing order, please try again.");
+      alert(err.message || (isAr ? "حدث خطأ أثناء معالجة الطلب، يرجى المحاولة مرة أخرى." : "Error processing order, please try again."));
     }
   };
 
@@ -677,7 +723,7 @@ ${itemsText}
                 </div>
                 {cart.map((item: any, i: number) => (
                   <div key={i} className="flex justify-between text-stone-600">
-                    <span className="truncate max-w-[200px]">{item.title} ({item.portionNote || "افتراضي"})</span>
+                    <span className="truncate max-w-[200px]">{item.title} ({item.portion || item.portionNote || "افتراضي"})</span>
                     <span className="font-bold">{(item.price * item.quantity).toFixed(2)} ر.س</span>
                   </div>
                 ))}

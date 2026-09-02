@@ -17,6 +17,7 @@ import { Product } from "@/types";
 import { supabase } from "@/lib/supabase/supabase";
 import { NotificationModal } from "@/components/notifications/NotificationModal";
 import { useUser } from "@/context/UserContext";
+import { CustomBoxModal } from "@/components/box-builder/CustomBoxModal";
 
 interface CategoryItem {
   id: string;
@@ -279,6 +280,7 @@ const { setIsRewardsOpen } = useUser();
 
       {/* Mobile/Desktop Navigation Bar */}
       <BottomNav />
+      
 
       {/* Modals & Triggers */}
       <IngredientModal product={activeProduct} onClose={() => setActiveProduct(null)} />
@@ -289,6 +291,8 @@ const { setIsRewardsOpen } = useUser();
       <ProfileModal />
       <RewardsModal />
       <NotificationModal />
+      {/* صانع البوكسات الملكية المخصص */}
+<CustomBoxModal />
       
     </div>
   );

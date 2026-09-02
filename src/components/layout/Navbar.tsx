@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Globe, MapPin, ChevronDown, Bell, User, ShoppingBag } from "lucide-react";
+import { Globe, MapPin, ChevronDown, Bell, User, ShoppingBag, PackagePlus, Sparkles } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useCart } from "@/context/CartContext";
 import { useUser } from "@/context/UserContext";
@@ -9,7 +9,7 @@ import { useUser } from "@/context/UserContext";
 export const Navbar: React.FC = () => {
   const { language, toggleLanguage } = useLanguage();
   const { totalItemsCount, setIsCartOpen } = useCart();
-  const { setIsProfileOpen, setIsNotificationsOpen, unreadNotificationsCount } = useUser();
+  const { setIsProfileOpen, setIsNotificationsOpen, unreadNotificationsCount, setIsMenuOpen } = useUser();
 
   return (
     <header className="w-full bg-[#4A0E17] text-white pt-3 pb-2.5 px-4 space-y-2.5 sticky top-0 z-40 shadow-lg border-b border-[#5E1420]">
@@ -52,8 +52,21 @@ export const Navbar: React.FC = () => {
           </div>
         </div>
 
-        {/* Action Buttons (Notification, Cart on Desktop, Profile) */}
+        {/* Action Buttons (Box Builder, Notification, Cart on Desktop, Profile) */}
         <div className="flex items-center gap-2 md:gap-3">
+
+          {/* 🌟 زر صمّم بوكسك الفاخر لأجهزة الكمبيوتر */}
+          <button
+            onClick={() => setIsMenuOpen(true)}
+            className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-[#C59B27]/40 text-[#E5C058] text-xs font-bold transition shadow-xs group cursor-pointer"
+          >
+            <PackagePlus className="w-4 h-4 text-[#E5C058] group-hover:scale-110 transition-transform" />
+            <span className="text-white group-hover:text-[#E5C058] transition">
+              {language === "ar" ? "صمّم بوكسك" : "Custom Box"}
+            </span>
+            <Sparkles className="w-3 h-3 text-[#E5C058] animate-pulse" />
+          </button>
+
           {/* 🔔 جرس الإشعارات مع عداد التنبيهات غير المقروءة */}
           <button 
             onClick={() => setIsNotificationsOpen(true)}

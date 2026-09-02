@@ -1,16 +1,16 @@
 "use client";
 
 import React from "react";
-import { Home, LayoutGrid, ShoppingBag, Gift, User } from "lucide-react";
+import { Home, LayoutGrid, ShoppingBag, Gift, User,Sparkles } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useUser } from "@/context/UserContext";
 import { useLanguage } from "@/context/LanguageContext";
+import { PackageOpen } from "lucide-react";
 
 export const BottomNav: React.FC = () => {
   const { totalItemsCount, setIsCartOpen, isCartBouncing } = useCart();
-  const { setIsProfileOpen, setIsRewardsOpen } = useUser();
+  const { setIsProfileOpen, setIsRewardsOpen ,setIsMenuOpen} = useUser();
   const { language } = useLanguage();
-
   return (
     <nav className="fixed z-40 bg-[#FAF5ED]/95 backdrop-blur-md border border-[#4A0E17]/15 shadow-2xl transition-all duration-300
       /* أضفنا md:hidden هنا لكي يختفي تماماً على أجهزة الكمبيوتر ويظهر على الموبايل فقط */
@@ -30,19 +30,18 @@ export const BottomNav: React.FC = () => {
           {language === "ar" ? "الرئيسية" : "Home"}
         </span>
       </button>
-
-      {/* 2. القائمة (Menu) */}
-      <button
-        onClick={() => document.getElementById("productsSection")?.scrollIntoView({ behavior: "smooth" })}
-        className="flex flex-col items-center gap-0.5 text-stone-500 hover:text-[#4A0E17] transition group"
-      >
-        <div className="w-8 h-7 flex items-center justify-center group-hover:scale-110 transition">
-          <LayoutGrid className="w-5 h-5" />
-        </div>
-        <span className="text-[9px] font-bold">
-          {language === "ar" ? "المنيو" : "Menu"}
-        </span>
-      </button>
+{/* زر صمّم بوكسك */}
+<button
+  onClick={() => setIsMenuOpen(true)}
+  className="flex flex-col items-center gap-0.5 text-stone-500 hover:text-[#4A0E17] transition group cursor-pointer"
+>
+  <div className="w-8 h-7 flex items-center justify-center group-hover:scale-110 transition">
+    <PackageOpen className="w-5 h-5 text-stone-600 group-hover:text-[#4A0E17]" strokeWidth={1.8} />
+  </div>
+  <span className="text-[9px] font-bold text-stone-600 group-hover:text-[#4A0E17]">
+    {language === "ar" ? "صمّم بوكسك" : "Custom Box"}
+  </span>
+</button>
 
       {/* 3. زر السلة الأوسط الفاخر (Cart) */}
       <button

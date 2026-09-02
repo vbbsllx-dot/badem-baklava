@@ -53,6 +53,8 @@ interface UserContextType {
   setIsRewardsOpen: (open: boolean) => void;
   isNotificationsOpen: boolean;
   setIsNotificationsOpen: (open: boolean) => void;
+  isMenuOpen: boolean;
+  setIsMenuOpen: (open: boolean) => void;
   // الإشعارات
   notifications: AppNotification[];
   unreadNotificationsCount: number;
@@ -74,6 +76,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isRewardsOpen, setIsRewardsOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // 1️⃣ استرجاع البيانات المحلية المحفوظة
   useEffect(() => {
@@ -116,8 +119,8 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(523.25, now); // نغمة C5
-      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.18); // نغمة G5
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.18);
       gain.gain.setValueAtTime(0.2, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
       osc.connect(gain);
@@ -144,7 +147,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     playNotificationSound();
   };
 
- // 1. الدالة المحدثة: حساب النقاط على قيمة المنتجات (Subtotal) بمعدل الإعدادات
+  // حساب النقاط على قيمة المنتجات بمعدل الإعدادات
   const syncPointsWithDatabase = useCallback(async () => {
     if (!userPhone.trim()) {
       setPoints(0);
@@ -158,7 +161,6 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .eq("id", "loyalty")
         .single();
 
-      // معدل النقاط من الإعدادات (الافتراضي 1 نقطة لكل 1 ريال)
       const rate = settings?.points_per_sar ? Number(settings.points_per_sar) : 1;
 
       const { data: completedOrders } = await supabase
@@ -168,7 +170,6 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .eq("status", "completed");
 
       if (completedOrders) {
-        // حساب النقاط على قيمة المنتجات فقط (بدون رسوم التوصيل)
         const totalEarned = completedOrders.reduce((sum, ord) => {
           const productAmount = parseFloat(ord.subtotal || ord.total_amount || "0");
           return sum + Math.floor(productAmount * rate);
@@ -183,7 +184,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [userPhone]);
 
-  // 2. الاستماع اللحظي للإشعار بحساب دقيق مطابق للإعدادات
+  // الاستماع اللحظي للإشعار بحساب دقيق
   useEffect(() => {
     if (!userPhone.trim()) return;
 
@@ -213,7 +214,6 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 updated.id
               );
             } else if (updated.status === "completed") {
-              // جلب معدل النقاط من الإعدادات بدقة
               const { data: settings } = await supabase
                 .from("store_settings")
                 .select("points_per_sar")
@@ -287,7 +287,6 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (orderData.phone && orderData.phone !== userPhone) setUserPhone(orderData.phone);
     if (orderData.customerName && orderData.customerName !== userName) setUserName(orderData.customerName);
 
-    // إضافة إشعار فوري بتأكيد إرسال الطلب
     pushNotification(
       "📦 تم استلام طلبك بنجاح",
       `تم استلام طلبك رقم #${orderData.id} وجاري مراجعته وتأكيده عبر الواتساب.`,
@@ -331,6 +330,8 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsRewardsOpen,
         isNotificationsOpen,
         setIsNotificationsOpen,
+        isMenuOpen,
+        setIsMenuOpen,
         notifications,
         unreadNotificationsCount,
         markAllNotificationsAsRead,
