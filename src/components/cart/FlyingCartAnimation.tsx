@@ -1,16 +1,32 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Image from "next/image";
 import { useCart } from "@/context/CartContext";
 
-// مكون العنصر الطائر الفردي لضمان تشغيل الحركة فوراً على كرت الشاشة
-const SingleFlyingItem = ({ item }: { item: any }) => {
-  const [fly, setFly] = useState(false);
+// واجهة بيانات العنصر الطائر لتفادي استخدام any
+export interface FlyingItemData {
+  id: string | number;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  image?: string;
+}
+
+// مكون العنصر الطائر الفردي - معالجة مباشرة على كرت الشاشة (GPU Accelerated)
+const SingleFlyingItem: React.FC<{ item: FlyingItemData }> = ({ item }) => {
+  const [isFlying, setIsFlying] = useState(false);
 
   useEffect(() => {
-    // تفعيل الحركة فور الرسم على الشاشة
-    const timer = setTimeout(() => setFly(true), 20);
-    return () => clearTimeout(timer);
+    // ⚡ استخدام requestAnimationFrame المزدوج لضمان تفعيل الحركة فور أول إطار رسم للشاشة بدون تأخير
+    const rafId = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setIsFlying(true);
+      });
+    });
+
+    return () => cancelAnimationFrame(rafId);
   }, []);
 
   const deltaX = item.endX - item.startX;
@@ -24,20 +40,25 @@ const SingleFlyingItem = ({ item }: { item: any }) => {
         top: `${item.startY - 22}px`,
         width: "44px",
         height: "44px",
-        transform: fly
-          ? `translate3d(${deltaX}px, ${deltaY}px, 0) scale(0.2) rotate(15deg)`
+        transform: isFlying
+          ? `translate3d(${deltaX}px, ${deltaY}px, 0) scale(0.18) rotate(18deg)`
           : "translate3d(0, 0, 0) scale(1.15) rotate(0deg)",
-        opacity: fly ? 0.1 : 1,
-        transition: "transform 0.42s cubic-bezier(0.18, 0.9, 0.32, 1.1), opacity 0.42s ease-in",
+        opacity: isFlying ? 0 : 1,
+        transition:
+          "transform 0.42s cubic-bezier(0.18, 0.9, 0.32, 1.1), opacity 0.42s cubic-bezier(0.4, 0, 1, 1)",
         willChange: "transform, opacity",
       }}
     >
-      <div className="w-full h-full rounded-full overflow-hidden shadow-2xl border-2 border-[#E5C058] bg-[#4A0E17] flex items-center justify-center">
-        <img
-          src={item.image}
-          alt=""
-          className="w-full h-full object-cover"
-          loading="eager"
+      {/* إطار العنصر الملكي مع الهالة الذهبية */}
+      <div className="relative w-full h-full rounded-full overflow-hidden shadow-2xl border-2 border-[#E5C058] bg-[#4A0E17] ring-2 ring-[#C59B27]/40 flex items-center justify-center">
+        <Image
+          src={item.image || "/hero-baklava.png"}
+          alt="Flying Sweet"
+          fill
+          sizes="44px"
+          quality={70}
+          priority
+          className="object-cover"
         />
       </div>
     </div>
@@ -47,10 +68,13 @@ const SingleFlyingItem = ({ item }: { item: any }) => {
 export const FlyingCartAnimation: React.FC = () => {
   const { flyingItems } = useCart();
 
-  if (flyingItems.length === 0) return null;
+  if (!flyingItems || flyingItems.length === 0) return null;
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-[99999] overflow-hidden">
+    <div 
+      className="fixed inset-0 pointer-events-none z-[99999] overflow-hidden" 
+      aria-hidden="true"
+    >
       {flyingItems.map((item) => (
         <SingleFlyingItem key={item.id} item={item} />
       ))}

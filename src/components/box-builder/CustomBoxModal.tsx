@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Sparkles, Plus, Minus, ShoppingBag, PackagePlus, CheckCircle2, Loader2, Info } from "lucide-react";
+import Image from "next/image";
+import { X, Plus, Minus, ShoppingBag, PackagePlus, CheckCircle2, Loader2, Info } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useCart } from "@/context/CartContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -41,54 +42,53 @@ export const CustomBoxModal: React.FC = () => {
   useEffect(() => {
     if (!isMenuOpen) return;
 
+    let isMounted = true;
+
     const fetchBuilderData = async () => {
       setIsLoading(true);
       try {
-        // 1. جلب إعدادات طريقة التسعير ورسوم التغليف
-        const { data: settingsData } = await supabase
-          .from("box_builder_settings")
-          .select("*")
-          .eq("id", "default")
-          .maybeSingle();
+        const [
+          { data: settingsData },
+          { data: tiersData },
+          { data: prodsData, error: prodsErr }
+        ] = await Promise.all([
+          supabase.from("box_builder_settings").select("*").eq("id", "default").maybeSingle(),
+          supabase.from("custom_box_tiers").select("*").eq("is_active", true).order("price"),
+          supabase.from("products").select("*")
+        ]);
 
-        if (settingsData) {
-          setBoxSettings({
-            pricing_mode: settingsData.pricing_mode || "dynamic",
-            packaging_fee: Number(settingsData.packaging_fee) || 0,
-            is_enabled: settingsData.is_enabled ?? true,
-          });
-        }
+        if (isMounted) {
+          if (settingsData) {
+            setBoxSettings({
+              pricing_mode: settingsData.pricing_mode || "dynamic",
+              packaging_fee: Number(settingsData.packaging_fee) || 0,
+              is_enabled: settingsData.is_enabled ?? true,
+            });
+          }
 
-        // 2. جلب أحجام وسعات البوكسات
-        const { data: tiersData } = await supabase
-          .from("custom_box_tiers")
-          .select("*")
-          .eq("is_active", true)
-          .order("price");
+          if (tiersData && tiersData.length > 0) {
+            setTiers(tiersData);
+            setSelectedTier(tiersData[0]);
+          }
 
-        if (tiersData && tiersData.length > 0) {
-          setTiers(tiersData);
-          setSelectedTier(tiersData[0]);
-        }
-
-        // 3. جلب كافة المنتجات المتاحة للتعبئة
-        const { data: prodsData, error: prodsErr } = await supabase
-          .from("products")
-          .select("*");
-
-        if (prodsErr) {
-          console.error("خطأ في جلب المنتجات للبوكس:", prodsErr);
-        } else if (prodsData && prodsData.length > 0) {
-          setAvailableProducts(prodsData);
+          if (prodsErr) {
+            console.error("خطأ في جلب المنتجات للبوكس:", prodsErr);
+          } else if (prodsData && prodsData.length > 0) {
+            setAvailableProducts(prodsData);
+          }
         }
       } catch (err) {
         console.error("Failed to load box builder data:", err);
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     };
 
     fetchBuilderData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isMenuOpen]);
 
   if (!isMenuOpen || !selectedTier) return null;
@@ -291,7 +291,18 @@ export const CustomBoxModal: React.FC = () => {
                   return (
                     <div key={prod.id} className="p-2.5 bg-white rounded-2xl border border-stone-200/80 flex items-center justify-between gap-2 shadow-2xs hover:border-[#4A0E17]/20 transition">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <img src={img} alt={name} className="w-10 h-10 rounded-xl object-cover border border-black/5 shrink-0" />
+                        {/* استخدام Image السريع بدلاً من img العادي */}
+                        <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-black/5 shrink-0 bg-stone-100">
+                          <Image
+                            src={img}
+                            alt={name}
+                            fill
+                            sizes="40px"
+                            quality={75}
+                            loading="lazy"
+                            className="object-cover"
+                          />
+                        </div>
                         <div className="min-w-0">
                           <span className="text-xs font-bold text-stone-800 truncate block">{name}</span>
                           {boxSettings.pricing_mode === "dynamic" && (

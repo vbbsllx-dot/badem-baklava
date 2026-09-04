@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { 
   ShoppingBag, Package, Tag, Printer, X, FileSpreadsheet, Download, 
   CalendarClock, DollarSign, Phone, MapPin, User, Gift, ExternalLink, 
-  Trash2, Pencil, CheckCircle2 
+  Trash2, Pencil, CheckCircle2, Loader2
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
 
@@ -24,15 +24,33 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
   const [selectedOrderForPrint, setSelectedOrderForPrint] = useState<any | null>(null);
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [todayFormattedDate, setTodayFormattedDate] = useState<string>("");
+
+  // تهيئة التاريخ الحي تفادياً لمشاكل الـ Hydration في Next.js
+  useEffect(() => {
+    const formatted = new Date().toLocaleDateString("ar-SA", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    setTodayFormattedDate(formatted);
+  }, []);
 
   // تحديث حالة الطلب السريعة
-  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
-    await supabase.from("orders").update({ status }).eq("id", orderId);
-    await fetchData();
-  };
+  const handleUpdateOrderStatus = useCallback(async (orderId: string, status: string) => {
+    try {
+      const { error } = await supabase.from("orders").update({ status }).eq("id", orderId);
+      if (error) throw error;
+      await fetchData();
+    } catch (err: any) {
+      console.error("Failed to update status:", err);
+      alert("تعذر تحديث حالة الطلب: " + err.message);
+    }
+  }, [fetchData]);
 
   // حذف الطلب نهائياً
-  const handleDeleteOrder = async (orderId: string) => {
+  const handleDeleteOrder = useCallback(async (orderId: string) => {
     const isConfirmed = window.confirm("هل أنت متأكد من حذف هذا الطلب نهائياً من قاعدة البيانات؟");
     if (!isConfirmed) return;
 
@@ -44,7 +62,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
     } catch (err: any) {
       alert("حدث خطأ أثناء الحذف: " + err.message);
     }
-  };
+  }, [fetchData]);
 
   // حفظ التعديلات الشاملة للطلب
   const handleSaveOrderChanges = async (e: React.FormEvent) => {
@@ -56,14 +74,14 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
       const { error } = await supabase
         .from("orders")
         .update({
-          customer_name: editingOrder.customer_name,
-          customer_phone: editingOrder.customer_phone,
-          city: editingOrder.city,
-          district: editingOrder.district,
-          street: editingOrder.street,
-          total_amount: editingOrder.total_amount,
-          status: editingOrder.status,
-          notes: editingOrder.notes,
+          customer_name: editingOrder.customer_name?.trim() || "",
+          customer_phone: editingOrder.customer_phone?.trim() || "",
+          city: editingOrder.city?.trim() || "",
+          district: editingOrder.district?.trim() || "",
+          street: editingOrder.street?.trim() || "",
+          total_amount: Number(editingOrder.total_amount) || 0,
+          status: editingOrder.status || "pending",
+          notes: editingOrder.notes || "",
         })
         .eq("id", editingOrder.id);
 
@@ -88,7 +106,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
 
     const tableRows = orders.map((o) => `
       <tr>
-        <td style="text-align: center; font-weight: bold;">${o.id || ""}</td>
+        <td style="text-align: center; font-weight: bold; mso-number-format:'\\@';">${o.id || ""}</td>
         <td style="text-align: center;">${o.created_at ? new Date(o.created_at).toLocaleString("ar-SA") : ""}</td>
         <td style="text-align: right; font-weight: bold;">${o.customer_name || ""}</td>
         <td style="text-align: center; mso-number-format:'\\@';">${o.customer_phone || ""}</td>
@@ -171,61 +189,66 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
 
   const totalRevenue = orders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
 
-  const todayFormattedDate = new Date().toLocaleDateString("ar-SA", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 select-none">
       
       {/* 📅 شريط التاريخ والوقت الحي */}
       <div className="bg-white px-5 py-3 rounded-2xl border border-stone-200/80 flex items-center justify-between text-xs font-bold text-stone-700 shadow-2xs">
         <div className="flex items-center gap-2">
-          <CalendarClock className="w-4 h-4 text-[#C59B27]" />
-          <span>{todayFormattedDate}</span>
+          <CalendarClock className="w-4 h-4 text-[#C59B27] shrink-0" />
+          <span className="min-h-[1rem]">{todayFormattedDate}</span>
         </div>
-        <span className="text-[10px] bg-emerald-50 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200/60 font-black">
-          الربط اللحظي مفعل 🟢
+        <span className="text-[10.5px] bg-emerald-50 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200/60 font-black flex items-center gap-1.5 shadow-2xs">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>الربط اللحظي مفعل (Live)</span>
         </span>
       </div>
 
       {/* 📊 بطاقات الإحصائيات */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
+        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 group">
           <span className="text-[10px] text-stone-400 font-bold block">إجمالي المبيعات</span>
-          <div className="flex items-center justify-between">
-            <span className="text-lg md:text-xl font-black text-[#4A0E17]">{totalRevenue.toFixed(2)} ر.س</span>
-            <div className="w-9 h-9 rounded-2xl bg-[#4A0E17]/10 flex items-center justify-center text-[#4A0E17]">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-lg md:text-xl font-black text-[#4A0E17] font-mono tracking-tight truncate">
+              {totalRevenue.toFixed(2)} <span className="text-xs font-bold font-sans">ر.س</span>
+            </span>
+            <div className="w-9 h-9 rounded-2xl bg-[#4A0E17]/10 flex items-center justify-center text-[#4A0E17] shrink-0">
               <DollarSign className="w-4 h-4" />
             </div>
           </div>
         </div>
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
+
+        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 group">
           <span className="text-[10px] text-stone-400 font-bold block">عدد الطلبات</span>
-          <div className="flex items-center justify-between">
-            <span className="text-lg md:text-xl font-black text-stone-800">{orders.length} طلب</span>
-            <div className="w-9 h-9 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-700">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-lg md:text-xl font-black text-stone-800 font-mono tracking-tight truncate">
+              {orders.length} <span className="text-xs font-bold font-sans">طلب</span>
+            </span>
+            <div className="w-9 h-9 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-700 shrink-0">
               <ShoppingBag className="w-4 h-4" />
             </div>
           </div>
         </div>
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
+
+        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 group">
           <span className="text-[10px] text-stone-400 font-bold block">الأصناف المعروضة</span>
-          <div className="flex items-center justify-between">
-            <span className="text-lg md:text-xl font-black text-stone-800">{productsCount} صنف</span>
-            <div className="w-9 h-9 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-700">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-lg md:text-xl font-black text-stone-800 font-mono tracking-tight truncate">
+              {productsCount} <span className="text-xs font-bold font-sans">صنف</span>
+            </span>
+            <div className="w-9 h-9 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-700 shrink-0">
               <Package className="w-4 h-4" />
             </div>
           </div>
         </div>
-        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1">
+
+        <div className="bg-white p-4 rounded-3xl border border-stone-200/80 shadow-2xs space-y-1 group">
           <span className="text-[10px] text-stone-400 font-bold block">الكوبونات النشطة</span>
-          <div className="flex items-center justify-between">
-            <span className="text-lg md:text-xl font-black text-stone-800">{couponsCount} كود</span>
-            <div className="w-9 h-9 rounded-2xl bg-purple-500/10 flex items-center justify-center text-purple-700">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-lg md:text-xl font-black text-stone-800 font-mono tracking-tight truncate">
+              {couponsCount} <span className="text-xs font-bold font-sans">كود</span>
+            </span>
+            <div className="w-9 h-9 rounded-2xl bg-purple-500/10 flex items-center justify-center text-purple-700 shrink-0">
               <Tag className="w-4 h-4" />
             </div>
           </div>
@@ -252,6 +275,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
         </div>
         
         <button
+          type="button"
           onClick={exportOrdersToExcel}
           className="w-full sm:w-auto px-6 py-3 bg-[#4A0E17] hover:bg-[#36070E] text-white rounded-2xl text-xs font-black shadow-md hover:shadow-lg transition-all transform active:scale-95 flex items-center justify-center gap-2.5 border border-[#C59B27]/40 group cursor-pointer shrink-0"
         >
@@ -263,17 +287,17 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
       {/* 📋 قائمة الطلبات بتصميم ملكي فاخر ومنظم */}
       <div className="space-y-4">
         {orders.length === 0 ? (
-          <div className="bg-white p-12 text-center rounded-3xl border border-stone-200 text-stone-400">
-            <ShoppingBag className="w-12 h-12 mx-auto stroke-1 mb-2" />
-            <p className="font-bold text-sm">لا توجد طلبات واردة حالياً.</p>
+          <div className="bg-white p-12 text-center rounded-3xl border border-stone-200 text-stone-400 shadow-2xs">
+            <ShoppingBag className="w-12 h-12 mx-auto stroke-[1.5] mb-2 text-stone-300" />
+            <p className="font-bold text-sm text-stone-700">لا توجد طلبات واردة حالياً.</p>
           </div>
         ) : (
           orders.map((ord) => (
-            <div key={ord.id} className="bg-white rounded-3xl border border-stone-200/80 shadow-2xs overflow-hidden transition hover:border-[#4A0E17]/30">
+            <div key={ord.id} className="bg-white rounded-3xl border border-stone-200/90 shadow-2xs overflow-hidden transition hover:border-[#4A0E17]/30">
               
-              {/* رأس البطاقة (رقم الطلب + الحالة + الأزرار: تعديل، طباعة، حذف) */}
+              {/* رأس البطاقة (رقم الطلب + الحالة + الأزرار) */}
               <div className="bg-[#FAF5ED] px-6 py-4 border-b border-stone-200/60 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <span className="font-mono text-sm font-black text-[#4A0E17] bg-white px-3 py-1 rounded-xl border border-stone-200 shadow-2xs">
                     #{ord.id}
                   </span>
@@ -291,8 +315,9 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                 <div className="flex items-center flex-wrap gap-2">
                   {/* زر تعديل الطلب */}
                   <button
+                    type="button"
                     onClick={() => setEditingOrder({ ...ord })}
-                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition"
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition active:scale-95"
                     title="تعديل بيانات الطلب"
                   >
                     <Pencil className="w-3.5 h-3.5 text-blue-600" />
@@ -301,8 +326,9 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
 
                   {/* زر طباعة الفاتورة */}
                   <button 
+                    type="button"
                     onClick={() => setSelectedOrderForPrint(ord)} 
-                    className="px-3 py-1.5 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold flex items-center gap-1.5 text-stone-700 shadow-2xs cursor-pointer transition"
+                    className="px-3 py-1.5 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold flex items-center gap-1.5 text-stone-700 shadow-2xs cursor-pointer transition active:scale-95"
                   >
                     <Printer className="w-3.5 h-3.5 text-[#C59B27]" />
                     <span>طباعة الفاتورة</span>
@@ -310,8 +336,9 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
 
                   {/* زر حذف الطلب */}
                   <button
+                    type="button"
                     onClick={() => handleDeleteOrder(ord.id)}
-                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition"
+                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition active:scale-95"
                     title="حذف الطلب نهائياً"
                   >
                     <Trash2 className="w-3.5 h-3.5 text-red-600" />
@@ -320,7 +347,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
 
                   {/* قائمة تغيير الحالة */}
                   <select
-                    value={ord.status}
+                    value={ord.status || "pending"}
                     onChange={(e) => handleUpdateOrderStatus(ord.id, e.target.value)}
                     className="bg-white border border-stone-200 rounded-xl px-3 py-1.5 text-xs font-bold text-stone-800 focus:outline-hidden shadow-2xs cursor-pointer"
                   >
@@ -337,11 +364,11 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-[#FAF5ED]/50 p-4 rounded-2xl border border-stone-200/40 text-xs">
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2 text-stone-800 font-bold">
-                      <User className="w-3.5 h-3.5 text-[#C59B27]" />
+                      <User className="w-3.5 h-3.5 text-[#C59B27] shrink-0" />
                       <span>{ord.customer_name}</span>
                     </div>
                     <div className="flex items-center gap-2 text-stone-600 font-medium">
-                      <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                      <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       <a href={`tel:${ord.customer_phone}`} dir="ltr" className="hover:underline font-mono">
                         {ord.customer_phone}
                       </a>
@@ -375,7 +402,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                     {Array.isArray(ord.items) && ord.items.map((it: any, idx: number) => (
                       <div key={idx} className="p-3 flex items-center justify-between text-xs hover:bg-[#FAF5ED]/30 transition">
                         <div className="flex items-center gap-2.5">
-                          <span className="w-6 h-6 rounded-lg bg-[#4A0E17]/10 text-[#4A0E17] font-black flex items-center justify-center text-[11px]">
+                          <span className="w-6 h-6 rounded-lg bg-[#4A0E17]/10 text-[#4A0E17] font-black flex items-center justify-center text-[11px] font-mono shrink-0">
                             {it.quantity}
                           </span>
                           <div>
@@ -383,8 +410,8 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                             <span className="text-[10px] text-stone-400">{it.portion || it.portionNote || "الحجم القياسي الملكي"}</span>
                           </div>
                         </div>
-                        <span className="font-black text-[#4A0E17]">
-                          {(it.price * it.quantity).toFixed(2)} ر.س
+                        <span className="font-black text-[#4A0E17] font-mono">
+                          {(Number(it.price) * it.quantity).toFixed(2)} ر.س
                         </span>
                       </div>
                     ))}
@@ -394,7 +421,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                 {/* ملاحظات إضافية */}
                 {ord.notes && !ord.notes.includes("https://") && (
                   <div className="text-xs bg-amber-50/80 p-3 rounded-2xl border border-amber-200/60 text-amber-900 flex items-start gap-2">
-                    <span className="font-bold">ملاحظات العميل:</span>
+                    <span className="font-bold shrink-0">ملاحظات العميل:</span>
                     <span className="flex-1">{ord.notes}</span>
                   </div>
                 )}
@@ -403,11 +430,11 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
               {/* ذيل البطاقة */}
               <div className="bg-[#FAF5ED]/80 px-6 py-4 border-t border-stone-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <span className="text-stone-500 font-medium">
-                  طريقة الدفع: <strong className="text-stone-800 uppercase">{ord.payment_method}</strong>
+                  طريقة الدفع: <strong className="text-stone-800 uppercase font-mono">{ord.payment_method}</strong>
                 </span>
                 <div className="flex items-center gap-2">
                   <span className="text-stone-500">المبلغ الإجمالي:</span>
-                  <span className="text-base font-black text-[#4A0E17]">{parseFloat(ord.total_amount).toFixed(2)} ر.س</span>
+                  <span className="text-base font-black text-[#4A0E17] font-mono">{parseFloat(ord.total_amount).toFixed(2)} ر.س</span>
                 </div>
               </div>
 
@@ -416,10 +443,10 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
         )}
       </div>
 
-      {/* ✏️ نافذة تعديل بيانات الطلب المنبثقة (Edit Modal) */}
+      {/* ✏️ نافذة تعديل بيانات الطلب المنبثقة */}
       {editingOrder && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-[#4A0E17]/20 space-y-5 text-[#2D2321] relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-[#4A0E17]/20 space-y-5 text-[#2D2321] relative max-h-[90vh] overflow-y-auto overscroll-contain">
             
             <div className="flex items-center justify-between border-b border-stone-200 pb-4">
               <div>
@@ -427,8 +454,9 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                 <p className="text-xs text-stone-400 mt-0.5">قم بتحديث معلومات العميل أو العنوان أو إجمالي الحساب</p>
               </div>
               <button 
+                type="button"
                 onClick={() => setEditingOrder(null)}
-                className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center hover:bg-stone-200 cursor-pointer"
+                className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center hover:bg-stone-200 cursor-pointer transition active:scale-90"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -442,7 +470,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                     type="text"
                     value={editingOrder.customer_name || ""}
                     onChange={(e) => setEditingOrder({ ...editingOrder, customer_name: e.target.value })}
-                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17] font-bold"
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-hidden focus:border-[#4A0E17] font-bold"
                     required
                   />
                 </div>
@@ -454,7 +482,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                     dir="ltr"
                     value={editingOrder.customer_phone || ""}
                     onChange={(e) => setEditingOrder({ ...editingOrder, customer_phone: e.target.value })}
-                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17] font-mono text-right"
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-hidden focus:border-[#4A0E17] font-mono text-right"
                     required
                   />
                 </div>
@@ -465,7 +493,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                     type="text"
                     value={editingOrder.city || ""}
                     onChange={(e) => setEditingOrder({ ...editingOrder, city: e.target.value })}
-                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17]"
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-hidden focus:border-[#4A0E17]"
                   />
                 </div>
 
@@ -475,7 +503,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                     type="text"
                     value={editingOrder.district || ""}
                     onChange={(e) => setEditingOrder({ ...editingOrder, district: e.target.value })}
-                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17]"
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-hidden focus:border-[#4A0E17]"
                   />
                 </div>
               </div>
@@ -486,7 +514,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                   type="text"
                   value={editingOrder.street || ""}
                   onChange={(e) => setEditingOrder({ ...editingOrder, street: e.target.value })}
-                  className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17]"
+                  className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-hidden focus:border-[#4A0E17]"
                 />
               </div>
 
@@ -498,7 +526,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                     step="0.01"
                     value={editingOrder.total_amount || 0}
                     onChange={(e) => setEditingOrder({ ...editingOrder, total_amount: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17] font-black text-[#4A0E17]"
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-hidden focus:border-[#4A0E17] font-black text-[#4A0E17] font-mono"
                     required
                   />
                 </div>
@@ -508,7 +536,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                   <select
                     value={editingOrder.status || "pending"}
                     onChange={(e) => setEditingOrder({ ...editingOrder, status: e.target.value })}
-                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17] font-bold"
+                    className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-hidden focus:border-[#4A0E17] font-bold cursor-pointer"
                   >
                     <option value="pending">⏳ قيد الانتظار</option>
                     <option value="baking">🔥 في الفرن والتجهيز</option>
@@ -524,7 +552,7 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                   rows={2}
                   value={editingOrder.notes || ""}
                   onChange={(e) => setEditingOrder({ ...editingOrder, notes: e.target.value })}
-                  className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-[#4A0E17]"
+                  className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-hidden focus:border-[#4A0E17]"
                 />
               </div>
 
@@ -532,16 +560,16 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => setEditingOrder(null)}
-                  className="px-5 py-2.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs font-bold transition cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs font-bold transition cursor-pointer active:scale-95"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
                   disabled={isProcessing}
-                  className="px-6 py-2.5 rounded-xl bg-[#4A0E17] hover:bg-[#36070E] text-white text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="px-6 py-2.5 rounded-xl bg-[#4A0E17] hover:bg-[#36070E] active:scale-95 text-white text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
+                  {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                   <span>{isProcessing ? "جاري الحفظ..." : "حفظ التعديلات"}</span>
                 </button>
               </div>
@@ -551,39 +579,36 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
         </div>
       )}
 
-      {/* 🖨️ نافذة طباعة الفاتورة الفاخرة (Receipt Modal) */}
+      {/* 🖨️ نافذة طباعة الفاتورة الفاخرة */}
       {selectedOrderForPrint && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl border border-[#4A0E17]/20 space-y-6 text-[#2D2321] relative">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl border border-[#4A0E17]/20 space-y-6 text-[#2D2321] relative max-h-[90vh] overflow-y-auto overscroll-contain">
             
-            {/* زر الإغلاق */}
             <button 
+              type="button"
               onClick={() => setSelectedOrderForPrint(null)} 
-              className="absolute top-6 left-6 w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center hover:bg-stone-200 cursor-pointer print:hidden"
+              className="absolute top-6 left-6 w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center hover:bg-stone-200 cursor-pointer print:hidden transition active:scale-90"
             >
               <X className="w-4 h-4" />
             </button>
 
-            {/* ترويسة الفاتورة الملكية */}
             <div className="text-center space-y-1.5 border-b border-stone-200 pb-5">
               <h2 className="text-xl font-black text-[#4A0E17] font-brand tracking-wider">BADEM BAKLAVA</h2>
               <p className="text-xs text-[#C59B27] font-bold">بادَم للحلويات الفاخرة والضيافة الملكية</p>
               <p className="text-[10px] text-stone-400">فاتورة تسليم مبيعات رسمية</p>
             </div>
 
-            {/* تفاصيل الطلب والفاتورة */}
             <div className="grid grid-cols-2 gap-4 text-xs bg-[#FAF5ED] p-4 rounded-2xl border border-stone-200/60">
               <div className="space-y-1">
                 <p><span className="text-stone-400">رقم الفاتورة:</span> <strong className="font-mono text-[#4A0E17]">#{selectedOrderForPrint.id}</strong></p>
-                <p><span className="text-stone-400">تاريخ الطلب:</span> <strong>{new Date(selectedOrderForPrint.created_at).toLocaleString("ar-SA")}</strong></p>
+                <p><span className="text-stone-400">تاريخ الطلب:</span> <strong>{selectedOrderForPrint.created_at ? new Date(selectedOrderForPrint.created_at).toLocaleString("ar-SA") : ""}</strong></p>
               </div>
-              <div className="space-y-1 text-left">
+              <div className="space-y-1 text-left rtl:text-right">
                 <p><span className="text-stone-400">العميل:</span> <strong>{selectedOrderForPrint.customer_name}</strong></p>
-                <p><span className="text-stone-400">الجوال:</span> <strong dir="ltr">{selectedOrderForPrint.customer_phone}</strong></p>
+                <p><span className="text-stone-400">الجوال:</span> <strong dir="ltr" className="font-mono">{selectedOrderForPrint.customer_phone}</strong></p>
               </div>
             </div>
 
-            {/* جدول المنتجات في الفاتورة */}
             <div className="space-y-2">
               <div className="text-[11px] font-black text-stone-400 border-b border-stone-200 pb-1 flex justify-between">
                 <span>الصنف والوصف</span>
@@ -591,49 +616,47 @@ export const OrdersManager: React.FC<OrdersManagerProps> = ({
               </div>
               <div className="space-y-2 text-xs divide-y divide-stone-100">
                 {Array.isArray(selectedOrderForPrint.items) && selectedOrderForPrint.items.map((it: any, i: number) => (
-                  <div key={i} className="flex justify-between pt-2">
-                    <span>{it.quantity}× {it.title} ({it.portion || it.portionNote || "قياسي"})</span>
-                    <span className="font-bold">{(it.price * it.quantity).toFixed(2)} ر.س</span>
+                  <div key={i} className="flex justify-between items-center pt-2">
+                    <span className="font-medium text-stone-800">{it.quantity}× {it.title} ({it.portion || it.portionNote || "قياسي"})</span>
+                    <span className="font-bold font-mono text-[#4A0E17]">{(Number(it.price) * it.quantity).toFixed(2)} ر.س</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* إجمالي الحساب */}
             <div className="border-t border-stone-200 pt-4 space-y-1.5 text-xs">
               <div className="flex justify-between text-stone-600">
                 <span>رسوم التوصيل الملكي:</span>
-                <span>{selectedOrderForPrint.delivery_fee || 15}.00 ر.س</span>
+                <span className="font-mono">{(Number(selectedOrderForPrint.delivery_fee) || 15).toFixed(2)} ر.س</span>
               </div>
-              {selectedOrderForPrint.discount_amount > 0 && (
+              {Number(selectedOrderForPrint.discount_amount) > 0 && (
                 <div className="flex justify-between text-emerald-700 font-bold">
                   <span>الخصم المطبق:</span>
-                  <span>- {selectedOrderForPrint.discount_amount.toFixed(2)} ر.س</span>
+                  <span className="font-mono">- {Number(selectedOrderForPrint.discount_amount).toFixed(2)} ر.س</span>
                 </div>
               )}
               <div className="flex justify-between items-center text-base font-black text-[#4A0E17] pt-2 border-t border-stone-200">
                 <span>المبلغ الإجمالي المدفوع:</span>
-                <span>{parseFloat(selectedOrderForPrint.total_amount).toFixed(2)} ر.س</span>
+                <span className="font-mono">{parseFloat(selectedOrderForPrint.total_amount).toFixed(2)} ر.س</span>
               </div>
             </div>
 
-            {/* توقيع وملاحظات الاستلام */}
             <div className="pt-4 border-t border-dashed border-stone-200 text-[10px] text-stone-400 flex justify-between items-end">
               <div>
-                <p>شكراً لاختياركم بادَم </p>
+                <p>شكراً لاختياركم بادَم</p>
                 <p>نتطلع لخدمتكم دائماً بأجود الحلويات الطازجة.</p>
               </div>
               <div className="text-center space-y-4">
-                <div className="w-32 border-b border-stone-300"></div>
+                <div className="w-32 border-b border-stone-300" />
                 <span>توقيع المندوب / المستلم</span>
               </div>
             </div>
 
-            {/* أزرار التحكم بالنافذة */}
             <div className="pt-2 print:hidden">
               <button 
+                type="button"
                 onClick={() => window.print()} 
-                className="w-full bg-[#4A0E17] hover:bg-[#36070E] text-white py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer transition"
+                className="w-full bg-[#4A0E17] hover:bg-[#36070E] active:scale-95 text-white py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer transition"
               >
                 <Printer className="w-4 h-4 text-[#C59B27]" />
                 <span>طباعة الفاتورة الرسمية</span>

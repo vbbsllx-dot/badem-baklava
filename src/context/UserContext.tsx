@@ -1,6 +1,15 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  ReactNode,
+} from "react";
 import { supabase } from "@/lib/supabase/supabase";
 
 export interface SavedAddress {
@@ -64,6 +73,15 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
+// مفاتيح التخزين المحددة لمنع تداخل أو مسح باقي بيانات المتجر
+const STORAGE_KEYS = {
+  NAME: "badem_user_name",
+  PHONE: "badem_user_phone",
+  ADDRESSES: "badem_user_addresses",
+  ORDERS: "badem_user_orders",
+  NOTIFICATIONS: "badem_user_notifications",
+};
+
 export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [userName, setUserName] = useState("");
   const [userPhone, setUserPhone] = useState("");
@@ -73,101 +91,144 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // حالات النوافذ المنبثقة
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isRewardsOpen, setIsRewardsOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // 1️⃣ استرجاع البيانات المحلية المحفوظة
+  // مرجع ثابت لمحرك الصوت لمنع تراكم الـ AudioContext في الذاكرة
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // 1️⃣ استرجاع البيانات بأمان عند بدء تشغيل المتصفح
   useEffect(() => {
     try {
-      const savedAddresses = localStorage.getItem("badem_user_addresses");
-      const savedOrders = localStorage.getItem("badem_user_orders");
-      const savedName = localStorage.getItem("badem_user_name");
-      const savedPhone = localStorage.getItem("badem_user_phone");
-      const savedNotifs = localStorage.getItem("badem_user_notifications");
+      if (typeof window !== "undefined") {
+        const savedName = localStorage.getItem(STORAGE_KEYS.NAME);
+        const savedPhone = localStorage.getItem(STORAGE_KEYS.PHONE);
+        const savedAddresses = localStorage.getItem(STORAGE_KEYS.ADDRESSES);
+        const savedOrders = localStorage.getItem(STORAGE_KEYS.ORDERS);
+        const savedNotifs = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
 
-      if (savedName) setUserName(savedName);
-      if (savedPhone) setUserPhone(savedPhone);
-      if (savedAddresses) setAddresses(JSON.parse(savedAddresses));
-      if (savedOrders) setOrders(JSON.parse(savedOrders));
-      if (savedNotifs) setNotifications(JSON.parse(savedNotifs));
+        if (savedName) setUserName(savedName);
+        if (savedPhone) setUserPhone(savedPhone);
+        if (savedAddresses) {
+          const parsed = JSON.parse(savedAddresses);
+          if (Array.isArray(parsed)) setAddresses(parsed);
+        }
+        if (savedOrders) {
+          const parsed = JSON.parse(savedOrders);
+          if (Array.isArray(parsed)) setOrders(parsed);
+        }
+        if (savedNotifs) {
+          const parsed = JSON.parse(savedNotifs);
+          if (Array.isArray(parsed)) setNotifications(parsed);
+        }
+      }
     } catch (e) {
-      console.error("Local load error:", e);
+      console.warn("Failed to load user state from localStorage:", e);
+    } finally {
+      setIsLoaded(true);
     }
-    setIsLoaded(true);
   }, []);
 
-  // 2️⃣ الحفظ المحلي التلقائي عند أي تحديث
+  // 2️⃣ الحفظ التلقائي الآمن للبيانات عند أي تحديث بعد التحميل الأولي
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem("badem_user_addresses", JSON.stringify(addresses));
-      localStorage.setItem("badem_user_orders", JSON.stringify(orders));
-      localStorage.setItem("badem_user_name", userName);
-      localStorage.setItem("badem_user_phone", userPhone);
-      localStorage.setItem("badem_user_notifications", JSON.stringify(notifications));
+    if (!isLoaded || typeof window === "undefined") return;
+
+    try {
+      localStorage.setItem(STORAGE_KEYS.NAME, userName);
+      localStorage.setItem(STORAGE_KEYS.PHONE, userPhone);
+      localStorage.setItem(STORAGE_KEYS.ADDRESSES, JSON.stringify(addresses));
+      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+      localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+    } catch (e) {
+      console.warn("Failed to persist user state:", e);
     }
   }, [addresses, orders, userName, userPhone, notifications, isLoaded]);
 
-  // صوت تنبيه ناعم للإشعار الجديد
-  const playNotificationSound = () => {
+  // تشغيل نغمة الإشعار باستخدام Web Audio API النظيف
+  const playNotificationSound = useCallback(() => {
+    if (typeof window === "undefined") return;
+
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      const AudioCtxClass =
+        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+      if (!AudioCtxClass) return;
+
+      if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
+        audioCtxRef.current = new AudioCtxClass();
+      }
+
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume();
+      }
+
       const now = ctx.currentTime;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+
       osc.type = "sine";
-      osc.frequency.setValueAtTime(523.25, now);
-      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.18);
-      gain.gain.setValueAtTime(0.2, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc.frequency.setValueAtTime(523.25, now); // نغمة C5 الملكية
+      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.18); // نغمة G5
+
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
       osc.connect(gain);
       gain.connect(ctx.destination);
+
       osc.start(now);
-      osc.stop(now + 0.6);
-    } catch (e) {
-      console.log(e);
+      osc.stop(now + 0.55);
+    } catch {
+      // تجاهل حظر الصوت التلقائي من المتصفح دون تعليق التطبيق
     }
-  };
+  }, []);
 
-  // دالة إضافة إشعار جديد
-  const pushNotification = (title: string, message: string, type: "order" | "points" | "promo", orderId?: string) => {
-    const newNotif: AppNotification = {
-      id: `notif-${Date.now()}-${Math.random()}`,
-      title,
-      message,
-      type,
-      date: new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
-      isRead: false,
-      orderId,
-    };
-    setNotifications((prev) => [newNotif, ...prev]);
-    playNotificationSound();
-  };
+  // إضافة إشعار جديد إلى القائمة وتشغيل النغمة
+  const pushNotification = useCallback(
+    (title: string, message: string, type: "order" | "points" | "promo", orderId?: string) => {
+      const newNotif: AppNotification = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        title,
+        message,
+        type,
+        date: new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
+        isRead: false,
+        orderId,
+      };
 
-  // حساب النقاط على قيمة المنتجات بمعدل الإعدادات
+      setNotifications((prev) => [newNotif, ...prev]);
+      playNotificationSound();
+    },
+    [playNotificationSound]
+  );
+
+  // حساب ومزامنة النقاط مع قاعدة البيانات بناءً على الطلبات المكتملة
   const syncPointsWithDatabase = useCallback(async () => {
-    if (!userPhone.trim()) {
+    const cleanPhone = userPhone.trim();
+    if (!cleanPhone) {
       setPoints(0);
       return;
     }
 
     try {
-      const { data: settings } = await supabase
-        .from("store_settings")
-        .select("points_per_sar")
-        .eq("id", "loyalty")
-        .single();
+      const [{ data: settings }, { data: completedOrders }] = await Promise.all([
+        supabase
+          .from("store_settings")
+          .select("points_per_sar")
+          .eq("id", "loyalty")
+          .maybeSingle(),
+        supabase
+          .from("orders")
+          .select("subtotal, total_amount, delivery_fee, status")
+          .eq("customer_phone", cleanPhone)
+          .eq("status", "completed"),
+      ]);
 
-      const rate = settings?.points_per_sar ? Number(settings.points_per_sar) : 1;
-
-      const { data: completedOrders } = await supabase
-        .from("orders")
-        .select("subtotal, total_amount, delivery_fee, status")
-        .eq("customer_phone", userPhone.trim())
-        .eq("status", "completed");
+      const rate = Number(settings?.points_per_sar) || 1;
 
       if (completedOrders) {
         const totalEarned = completedOrders.reduce((sum, ord) => {
@@ -175,30 +236,30 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return sum + Math.floor(productAmount * rate);
         }, 0);
 
-        const redeemed = Number(localStorage.getItem(`badem_redeemed_${userPhone.trim()}`) || "0");
+        const redeemed = Number(localStorage.getItem(`badem_redeemed_${cleanPhone}`) || "0");
         const available = Math.max(0, totalEarned - redeemed);
         setPoints(available);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Points sync error:", err);
     }
   }, [userPhone]);
 
-  // الاستماع اللحظي للإشعار بحساب دقيق
+  // الاشتراك اللحظي في تحديثات الطلبات وإرسال الإشعارات للعميل
   useEffect(() => {
-    if (!userPhone.trim()) return;
+    const cleanPhone = userPhone.trim();
+    if (!cleanPhone) return;
 
     syncPointsWithDatabase();
 
     const channel = supabase
-      .channel(`realtime-notifications-${userPhone.trim()}`)
+      .channel(`realtime-orders-${cleanPhone}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders" },
         async (payload: any) => {
           const updated = payload.new;
-          if (updated && updated.customer_phone === userPhone.trim()) {
-            
+          if (updated && updated.customer_phone === cleanPhone) {
             if (updated.status === "baking") {
               pushNotification(
                 "🔥 جاري خَبز وتجهيز طلبك",
@@ -218,9 +279,9 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 .from("store_settings")
                 .select("points_per_sar")
                 .eq("id", "loyalty")
-                .single();
-              const rate = settings?.points_per_sar ? Number(settings.points_per_sar) : 1;
-              
+                .maybeSingle();
+
+              const rate = Number(settings?.points_per_sar) || 1;
               const productAmount = parseFloat(updated.subtotal || updated.total_amount || "0");
               const earnedPts = Math.floor(productAmount * rate);
 
@@ -240,107 +301,151 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userPhone, syncPointsWithDatabase]);
+  }, [userPhone, syncPointsWithDatabase, pushNotification]);
 
-  const markAllNotificationsAsRead = () => {
+  const markAllNotificationsAsRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-  };
+  }, []);
 
-  const clearNotifications = () => {
+  const clearNotifications = useCallback(() => {
     setNotifications([]);
-  };
+  }, []);
 
-  const addPoints = (amount: number) => setPoints((prev) => prev + amount);
+  const addPoints = useCallback((amount: number) => {
+    setPoints((prev) => prev + amount);
+  }, []);
 
-  const redeemPoints = (cost: number): boolean => {
-    if (points >= cost) {
-      setPoints((prev) => prev - cost);
-      if (userPhone.trim()) {
-        const current = Number(localStorage.getItem(`badem_redeemed_${userPhone.trim()}`) || "0");
-        localStorage.setItem(`badem_redeemed_${userPhone.trim()}`, String(current + cost));
+  const redeemPoints = useCallback(
+    (cost: number): boolean => {
+      if (points >= cost) {
+        setPoints((prev) => prev - cost);
+        const cleanPhone = userPhone.trim();
+        if (cleanPhone) {
+          const current = Number(localStorage.getItem(`badem_redeemed_${cleanPhone}`) || "0");
+          localStorage.setItem(`badem_redeemed_${cleanPhone}`, String(current + cost));
+        }
+
+        pushNotification(
+          "🎟️ تم استبدال النقاط بنجاح",
+          `تم استبدال ${cost} نقطة بنجاح، كود الخصم جاهز في محفظتك لاستخدامه في السلة.`,
+          "points"
+        );
+        return true;
       }
-      pushNotification(
-        "🎟️ تم استبدال النقاط بنجاح",
-        `تم استبدال ${cost} نقطة بنجاح، كود الخصم جاهز في محفظتك لاستخدامه في السلة.`,
-        "points"
-      );
-      return true;
-    }
-    return false;
-  };
+      return false;
+    },
+    [points, userPhone, pushNotification]
+  );
 
-  const addAddress = (addr: Omit<SavedAddress, "id">) => {
-    setAddresses((prev) => [...prev, { ...addr, id: Date.now().toString() }]);
-  };
+  const addAddress = useCallback((addr: Omit<SavedAddress, "id">) => {
+    setAddresses((prev) => [...prev, { ...addr, id: `addr-${Date.now()}` }]);
+  }, []);
 
-  const deleteAddress = (id: string) => {
+  const deleteAddress = useCallback((id: string) => {
     setAddresses((prev) => prev.filter((a) => a.id !== id));
-  };
+  }, []);
 
-  const addOrder = async (orderData: any) => {
-    const now = new Date();
-    const formattedDate = `${now.toLocaleDateString("ar-SA")} - ${now.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}`;
-    const newOrder: PastOrder = { ...orderData, date: formattedDate, status: "pending" };
-    
-    setOrders((prev) => [newOrder, ...prev]);
+  const addOrder = useCallback(
+    async (orderData: any) => {
+      const now = new Date();
+      const formattedDate = `${now.toLocaleDateString("ar-SA")} - ${now.toLocaleTimeString("ar-SA", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`;
 
-    if (orderData.phone && orderData.phone !== userPhone) setUserPhone(orderData.phone);
-    if (orderData.customerName && orderData.customerName !== userName) setUserName(orderData.customerName);
+      const newOrder: PastOrder = { ...orderData, date: formattedDate, status: "pending" };
+      setOrders((prev) => [newOrder, ...prev]);
 
-    pushNotification(
-      "📦 تم استلام طلبك بنجاح",
-      `تم استلام طلبك رقم #${orderData.id} وجاري مراجعته وتأكيده عبر الواتساب.`,
-      "order",
-      orderData.id
-    );
-  };
+      if (orderData.phone && orderData.phone !== userPhone) setUserPhone(orderData.phone);
+      if (orderData.customerName && orderData.customerName !== userName) setUserName(orderData.customerName);
 
-  const resetAllUserData = () => {
-    localStorage.clear();
+      pushNotification(
+        "📦 تم استلام طلبك بنجاح",
+        `تم استلام طلبك رقم #${orderData.id} وجاري مراجعته وتأكيده عبر الواتساب.`,
+        "order",
+        orderData.id
+      );
+    },
+    [userName, userPhone, pushNotification]
+  );
+
+  // تصفير بيانات المستخدم فقط دون مسح السلة أو لغة المتجر
+  const resetAllUserData = useCallback(() => {
+    const cleanPhone = userPhone.trim();
+    if (typeof window !== "undefined") {
+      Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
+      if (cleanPhone) {
+        localStorage.removeItem(`badem_redeemed_${cleanPhone}`);
+      }
+    }
+
     setUserName("");
     setUserPhone("");
     setPoints(0);
     setAddresses([]);
     setOrders([]);
     setNotifications([]);
-  };
+  }, [userPhone]);
 
-  const unreadNotificationsCount = notifications.filter((n) => !n.isRead).length;
+  const unreadNotificationsCount = useMemo(() => {
+    return notifications.filter((n) => !n.isRead).length;
+  }, [notifications]);
 
-  return (
-    <UserContext.Provider
-      value={{
-        userName,
-        setUserName,
-        userPhone,
-        setUserPhone,
-        points,
-        addPoints,
-        redeemPoints,
-        addresses,
-        addAddress,
-        deleteAddress,
-        orders,
-        addOrder,
-        resetAllUserData,
-        syncPointsWithDatabase,
-        isProfileOpen,
-        setIsProfileOpen,
-        isRewardsOpen,
-        setIsRewardsOpen,
-        isNotificationsOpen,
-        setIsNotificationsOpen,
-        isMenuOpen,
-        setIsMenuOpen,
-        notifications,
-        unreadNotificationsCount,
-        markAllNotificationsAsRead,
-        clearNotifications,
-      }}
-    >
-      {children}
-    </UserContext.Provider>
+  // دمج قيم السياق بـ useMemo لمنع إعادة تصيير مكونات المتجر عند كل تحديث
+  const contextValue = useMemo(
+    () => ({
+      userName,
+      setUserName,
+      userPhone,
+      setUserPhone,
+      points,
+      addPoints,
+      redeemPoints,
+      addresses,
+      addAddress,
+      deleteAddress,
+      orders,
+      addOrder,
+      resetAllUserData,
+      syncPointsWithDatabase,
+      isProfileOpen,
+      setIsProfileOpen,
+      isRewardsOpen,
+      setIsRewardsOpen,
+      isNotificationsOpen,
+      setIsNotificationsOpen,
+      isMenuOpen,
+      setIsMenuOpen,
+      notifications,
+      unreadNotificationsCount,
+      markAllNotificationsAsRead,
+      clearNotifications,
+    }),
+    [
+      userName,
+      userPhone,
+      points,
+      addPoints,
+      redeemPoints,
+      addresses,
+      addAddress,
+      deleteAddress,
+      orders,
+      addOrder,
+      resetAllUserData,
+      syncPointsWithDatabase,
+      isProfileOpen,
+      isRewardsOpen,
+      isNotificationsOpen,
+      isMenuOpen,
+      notifications,
+      unreadNotificationsCount,
+      markAllNotificationsAsRead,
+      clearNotifications,
+    ]
   );
+
+  return <UserContext.Provider value={contextValue}>{children}</UserContext.Provider>;
 };
 
 export const useUser = () => {

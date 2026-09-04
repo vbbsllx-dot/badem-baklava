@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase/supabase";
-import { PackagePlus, Save, Sparkles, Check, Box, Layers, DollarSign } from "lucide-react";
+import { PackagePlus, Save, Sparkles, Check, Box, Layers, DollarSign, Loader2 } from "lucide-react";
 
 interface BoxTier {
   id: string;
@@ -12,7 +12,7 @@ interface BoxTier {
   price: number;
 }
 
-export const BoxBuilderSettings = () => {
+export const BoxBuilderSettings: React.FC = () => {
   const [pricingMode, setPricingMode] = useState<"dynamic" | "fixed">("dynamic");
   const [packagingFee, setPackagingFee] = useState<number>(0);
   const [isEnabled, setIsEnabled] = useState<boolean>(true);
@@ -23,42 +23,46 @@ export const BoxBuilderSettings = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // جلب إعدادات المتجر ومقاسات البوكسات
+  // جلب إعدادات المتجر ومقاسات البوكسات بأمان
   useEffect(() => {
+    let isMounted = true;
+
     const loadAllSettings = async () => {
-      // 1. جلب الإعداد العام للتسعير
-      const { data: settings } = await supabase
-        .from("box_builder_settings")
-        .select("*")
-        .eq("id", "default")
-        .maybeSingle();
+      try {
+        const [settingsRes, tiersRes] = await Promise.all([
+          supabase.from("box_builder_settings").select("*").eq("id", "default").maybeSingle(),
+          supabase.from("custom_box_tiers").select("*").order("capacity", { ascending: true }),
+        ]);
 
-      if (settings) {
-        setPricingMode(settings.pricing_mode || "dynamic");
-        setPackagingFee(Number(settings.packaging_fee) || 0);
-        setIsEnabled(settings.is_enabled ?? true);
-      }
+        if (isMounted) {
+          if (settingsRes.data) {
+            setPricingMode(settingsRes.data.pricing_mode || "dynamic");
+            setPackagingFee(Number(settingsRes.data.packaging_fee) || 0);
+            setIsEnabled(settingsRes.data.is_enabled ?? true);
+          }
 
-      // 2. جلب مقاسات البوكسات
-      const { data: tiersData } = await supabase
-        .from("custom_box_tiers")
-        .select("*")
-        .order("capacity", { ascending: true });
-
-      if (tiersData && tiersData.length > 0) {
-        setTiers(tiersData);
+          if (tiersRes.data && tiersRes.data.length > 0) {
+            setTiers(tiersRes.data);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load box builder settings:", err);
       }
     };
 
     loadAllSettings();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // تحديث سعر أو سعة بوكس معين
-  const handleTierChange = (id: string, field: "price" | "capacity", value: number) => {
+  // تحديث سعر أو سعة بوكس معين محلياً
+  const handleTierChange = useCallback((id: string, field: "price" | "capacity", value: number) => {
     setTiers((prev) =>
       prev.map((t) => (t.id === id ? { ...t, [field]: value } : t))
     );
-  };
+  }, []);
 
   // حفظ التعديلات في قاعدة البيانات
   const handleSave = async (e: React.FormEvent) => {
@@ -80,31 +84,33 @@ export const BoxBuilderSettings = () => {
 
       if (settingsError) throw settingsError;
 
-      // 2. تحديث السعة والأسعار في جدول custom_box_tiers
-      for (const tier of tiers) {
-        const { error: tierError } = await supabase
+      // 2. تحديث السعة والأسعار في جدول custom_box_tiers بالتوازي
+      const updatePromises = tiers.map((tier) =>
+        supabase
           .from("custom_box_tiers")
           .update({
             price: tier.price,
             capacity: tier.capacity,
           })
-          .eq("id", tier.id);
+          .eq("id", tier.id)
+      );
 
-        if (tierError) throw tierError;
-      }
+      const results = await Promise.all(updatePromises);
+      const failed = results.find((res) => res.error);
+      if (failed && failed.error) throw failed.error;
 
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3500);
-      alert("تم حفظ الإعدادات والأسعار بنجاح! ✅");
     } catch (err: any) {
-      alert("حدث خطأ أثناء الحفظ: " + err.message);
+      console.error("Save box settings error:", err);
+      alert("حدث خطأ أثناء الحفظ: " + (err.message || "يرجى المحاولة لاحقاً"));
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-3xl border border-stone-200/80 shadow-2xs overflow-hidden p-6 max-w-3xl mx-auto space-y-6 text-stone-800">
+    <div className="bg-white rounded-3xl border border-stone-200/80 shadow-2xs overflow-hidden p-6 max-w-3xl mx-auto space-y-6 text-stone-800 select-none">
       
       {/* ترويسة اللوحة */}
       <div className="flex items-center justify-between border-b border-stone-100 pb-4">
@@ -113,18 +119,18 @@ export const BoxBuilderSettings = () => {
             <PackagePlus className="w-5 h-5 text-[#C59B27]" />
           </div>
           <div>
-            <h3 className="font-black text-base text-[#4A0E17]">إعدادات خدمة "صمّم بوكسك"</h3>
+            <h3 className="font-black text-base text-[#4A0E17]">إعدادات خدمة &quot;صمّم بوكسك&quot;</h3>
             <p className="text-xs text-stone-400">التحكم في طريقة تسعير البوكسات وسعاتها</p>
           </div>
         </div>
 
-        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold bg-[#FAF5ED] px-3 py-1.5 rounded-xl border border-stone-200">
+        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold bg-[#FAF5ED] px-3.5 py-2 rounded-xl border border-stone-200 shadow-2xs">
           <span>{isEnabled ? "الخدمة نشطة 🟢" : "الخدمة معطلة 🔴"}</span>
           <input
             type="checkbox"
             checked={isEnabled}
             onChange={(e) => setIsEnabled(e.target.checked)}
-            className="w-4 h-4 accent-[#4A0E17] rounded-md"
+            className="w-4 h-4 accent-[#4A0E17] rounded-md cursor-pointer"
           />
         </label>
       </div>
@@ -139,17 +145,17 @@ export const BoxBuilderSettings = () => {
             {/* خيار التسعير الديناميكي */}
             <div
               onClick={() => setPricingMode("dynamic")}
-              className={`p-4 rounded-2xl border cursor-pointer transition ${
+              className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                 pricingMode === "dynamic"
-                  ? "border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs"
-                  : "border-stone-200 hover:border-stone-300"
+                  ? "border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs ring-1 ring-[#4A0E17]/20"
+                  : "border-stone-200 hover:border-stone-300 bg-white"
               }`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-[#4A0E17]">تسعير ديناميكي (تراكمي)</span>
                 <Sparkles className="w-4 h-4 text-[#C59B27]" />
               </div>
-              <p className="text-[11px] text-stone-500 mt-1">
+              <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">
                 يُحسب السعر بجمع أسعار القطع التي يختارها العميل تلقائياً + رسوم التغليف.
               </p>
             </div>
@@ -157,18 +163,18 @@ export const BoxBuilderSettings = () => {
             {/* خيار السعر الثابت */}
             <div
               onClick={() => setPricingMode("fixed")}
-              className={`p-4 rounded-2xl border cursor-pointer transition ${
+              className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                 pricingMode === "fixed"
-                  ? "border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs"
-                  : "border-stone-200 hover:border-stone-300"
+                  ? "border-[#4A0E17] bg-[#4A0E17]/5 shadow-xs ring-1 ring-[#4A0E17]/20"
+                  : "border-stone-200 hover:border-stone-300 bg-white"
               }`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-[#4A0E17]">سعر موحد ثابت للبوكس</span>
                 <DollarSign className="w-4 h-4 text-[#C59B27]" />
               </div>
-              <p className="text-[11px] text-stone-500 mt-1">
-                تحديد سعر مقطوع ومحدد لكل مقاس بوكس تدخله أنت بالأسفل.
+              <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">
+                تحديد سعر مقطوع ومحدد لكل مقاس بوكس تدخله أنت بالأسفل بغض النظر عن الأصناف.
               </p>
             </div>
           </div>
@@ -176,7 +182,7 @@ export const BoxBuilderSettings = () => {
 
         {/* 🌟 قسم سعات وأسعار البوكسات */}
         <div className="space-y-3 bg-[#FAF5ED] p-5 rounded-2xl border border-stone-200">
-          <div className="flex items-center justify-between border-b border-stone-200/60 pb-2">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 border-b border-stone-200/60 pb-2">
             <span className="text-xs font-black text-[#4A0E17] flex items-center gap-1.5">
               <Box className="w-4 h-4 text-[#C59B27]" />
               <span>
@@ -196,10 +202,10 @@ export const BoxBuilderSettings = () => {
             {tiers.map((t) => (
               <div
                 key={t.id}
-                className="bg-white p-3.5 rounded-xl border border-stone-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs"
+                className="bg-white p-3.5 rounded-xl border border-stone-200/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center font-black text-xs">
+                  <div className="w-8 h-8 rounded-lg bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center font-black text-xs shrink-0">
                     <Layers className="w-4 h-4 text-[#C59B27]" />
                   </div>
                   <div>
@@ -209,7 +215,7 @@ export const BoxBuilderSettings = () => {
                 </div>
 
                 <div className="flex items-center gap-3 w-full sm:w-auto">
-                  {/* حقل سعة البوكس (يظهر في كلا الحالتين) */}
+                  {/* حقل سعة البوكس */}
                   <div className="flex-1 sm:flex-initial">
                     <label className="block text-[10px] font-bold text-stone-500 mb-0.5">سعة البوكس (عدد القطع):</label>
                     <div className="relative">
@@ -218,13 +224,13 @@ export const BoxBuilderSettings = () => {
                         min="1"
                         value={t.capacity}
                         onChange={(e) => handleTierChange(t.id, "capacity", parseInt(e.target.value) || 1)}
-                        className="w-28 bg-[#FAF5ED] border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-stone-800 focus:outline-none focus:border-[#4A0E17]"
+                        className="w-28 bg-[#FAF5ED] border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-stone-800 focus:outline-hidden focus:border-[#4A0E17]"
                       />
-                      <span className="absolute left-2 top-1.5 text-[10px] text-stone-400 font-bold">قطع</span>
+                      <span className="absolute left-2.5 top-1.5 text-[10px] text-stone-400 font-bold pointer-events-none">قطع</span>
                     </div>
                   </div>
 
-                  {/* 🌟 حقل تحديد السعر المباشر للبوكس - يظهر فقط عند اختيار السعر الثابت! */}
+                  {/* حقل تحديد السعر المباشر للبوكس - يظهر فقط عند اختيار السعر الثابت */}
                   {pricingMode === "fixed" && (
                     <div className="flex-1 sm:flex-initial animate-in fade-in duration-200">
                       <label className="block text-[10px] font-bold text-stone-500 mb-0.5">سعر البوكس (ر.س):</label>
@@ -235,9 +241,9 @@ export const BoxBuilderSettings = () => {
                           min="0"
                           value={t.price}
                           onChange={(e) => handleTierChange(t.id, "price", parseFloat(e.target.value) || 0)}
-                          className="w-28 bg-[#FAF5ED] border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-black text-[#4A0E17] focus:outline-none focus:border-[#4A0E17]"
+                          className="w-28 bg-[#FAF5ED] border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-black text-[#4A0E17] focus:outline-hidden focus:border-[#4A0E17]"
                         />
-                        <span className="absolute left-2 top-1.5 text-[10px] text-stone-400 font-bold">ر.س</span>
+                        <span className="absolute left-2.5 top-1.5 text-[10px] text-stone-400 font-bold pointer-events-none">ر.س</span>
                       </div>
                     </div>
                   )}
@@ -259,9 +265,9 @@ export const BoxBuilderSettings = () => {
               min="0"
               value={packagingFee}
               onChange={(e) => setPackagingFee(parseFloat(e.target.value) || 0)}
-              className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-[#4A0E17] focus:outline-none focus:border-[#4A0E17]"
+              className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-[#4A0E17] focus:outline-hidden focus:border-[#4A0E17]"
             />
-            <span className="absolute left-3 top-2.5 text-xs text-stone-400 font-bold">ر.س</span>
+            <span className="absolute left-3 top-2.5 text-xs text-stone-400 font-bold pointer-events-none">ر.س</span>
           </div>
           <p className="text-[10px] text-stone-400 mt-1 font-medium">
             * ضع القيمة (0) إذا كنت تريد تقديم العلبة الفاخرة والتغليف مجاناً كعرض ترويجي.
@@ -270,17 +276,22 @@ export const BoxBuilderSettings = () => {
 
         {/* زر الحفظ */}
         <div className="flex items-center justify-between pt-3 border-t border-stone-100">
-          {savedSuccess && (
-            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+          {savedSuccess ? (
+            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 animate-in fade-in">
               <Check className="w-4 h-4" /> تم تحديث الإعدادات بنجاح!
             </span>
-          )}
+          ) : <span />}
+
           <button
             type="submit"
             disabled={isSaving}
-            className="mr-auto px-7 py-3 bg-[#4A0E17] hover:bg-[#36070E] text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+            className="px-7 py-3 bg-[#4A0E17] hover:bg-[#36070E] active:scale-95 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
           >
-            <Save className="w-4 h-4 text-[#C59B27]" />
+            {isSaving ? (
+              <Loader2 className="w-4 h-4 animate-spin text-[#C59B27]" />
+            ) : (
+              <Save className="w-4 h-4 text-[#C59B27]" />
+            )}
             <span>{isSaving ? "جاري الحفظ..." : "حفظ الإعدادات"}</span>
           </button>
         </div>

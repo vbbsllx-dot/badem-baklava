@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { supabase } from "@/lib/supabase/supabase";
@@ -51,7 +52,6 @@ export const PromoCarousel: React.FC = () => {
     return () => clearInterval(interval);
   }, [banners.length]);
 
-  // الشرط تم نقله إلى هنا (بعد جميع الـ Hooks لتجنب أي أخطاء في الـ Render)
   if (banners.length === 0) {
     return null;
   }
@@ -59,7 +59,10 @@ export const PromoCarousel: React.FC = () => {
   const current = banners[currentIndex] || banners[0];
 
   const scrollToMenu = () => {
-    const el = document.getElementById("categories-section") || document.getElementById("menu-section") || document.getElementById("products");
+    const el =
+      document.getElementById("categories-section") ||
+      document.getElementById("menu-section") ||
+      document.getElementById("products");
     if (el) el.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -101,13 +104,18 @@ export const PromoCarousel: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. إطار صورة المنتج الثابت والمتناسق */}
+          {/* 2. إطار صورة المنتج الفائق السرعة */}
           {current.image_url && (
-            <div className="w-28 sm:w-48 md:w-64 h-28 sm:h-48 md:h-64 rounded-xl sm:rounded-2xl overflow-hidden shadow-lg border border-white/10 shrink-0 bg-black/20">
-              <img
+            <div className="relative w-28 sm:w-48 md:w-64 h-28 sm:h-48 md:h-64 rounded-xl sm:rounded-2xl overflow-hidden shadow-lg border border-white/10 shrink-0 bg-black/20">
+              <Image
+                key={current.image_url}
                 src={current.image_url}
-                alt={isAr ? current.title_ar : current.title_en}
-                className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
+                alt={(isAr ? current.title_ar : current.title_en) || "عرض خاص"}
+                fill
+                priority
+                quality={85}
+                sizes="(max-width: 640px) 112px, (max-width: 768px) 192px, 256px"
+                className="object-cover transform hover:scale-105 transition-transform duration-500 animate-in fade-in duration-300"
               />
             </div>
           )}

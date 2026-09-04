@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Phone, MapPin } from "lucide-react";
+import { Phone, MapPin, Clock } from "lucide-react";
+import { useLanguage } from "@/context/LanguageContext";
 
 // شعار إنستغرام مدمج كـ SVG خفيف وسريع بدون أي مكتبات خارجية
 const InstagramIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
@@ -13,6 +14,7 @@ const InstagramIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
+    aria-hidden="true"
   >
     <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
     <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
@@ -21,40 +23,79 @@ const InstagramIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
 );
 
 export const Footer: React.FC = () => {
+  const { language } = useLanguage();
+  const isAr = language === "ar";
+  const currentYear = new Date().getFullYear();
+
   return (
-    <footer className="w-full bg-[#4A0E17] text-white border-t border-[#C59B27]/40 mt-12 py-5 px-4 hidden md:block shadow-2xl">
-      <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4 text-xs">
+    <footer className="w-full bg-[#4A0E17] text-white border-t border-[#C59B27]/30 mt-14 py-6 px-4 hidden md:block shadow-2xl relative z-10">
+      <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-xs">
         
-        {/* Left Side: Brand Name & Address Info */}
-        <div className="flex items-center gap-3">
-          <span className="font-bold text-[#E5C058] font-brand text-sm tracking-widest uppercase drop-shadow-xs">
-            BADEM BAKLAVA
-          </span>
-          <span className="text-white/30">|</span>
-          <span className="flex items-center gap-1.5 text-stone-200">
-            <MapPin className="w-3.5 h-3.5 text-[#E5C058]" />
-            الرياض - حي المحمدية - شارع التخصصي | أوقات العمل: 4 م - 12 ص
-          </span>
+        {/* الجانب الأيمن / الأيسر: شعار العلامة التجارية والموقع */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex flex-col">
+            <span className="font-black text-[#E5C058] font-brand text-sm tracking-[0.2em] uppercase drop-shadow-xs">
+              BADEM BAKLAVA
+            </span>
+            <span className="text-[9px] text-stone-300 font-medium tracking-widest uppercase -mt-0.5">
+              {isAr ? "بقلاوة ملكية فاخرة" : "Royal Turkish Sweets"}
+            </span>
+          </div>
+
+          <span className="text-white/20 hidden sm:inline">|</span>
+
+          <div className="flex items-center gap-3 text-stone-200">
+            <span className="flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-[#E5C058] shrink-0" />
+              <span>
+                {isAr
+                  ? "الرياض - حي المحمدية - شارع التخصصي"
+                  : "Riyadh - Al Mohammadiyah - Tahlia St"}
+              </span>
+            </span>
+
+            <span className="text-white/20 hidden sm:inline">•</span>
+
+            <span className="flex items-center gap-1.5 text-stone-300">
+              <Clock className="w-3.5 h-3.5 text-[#E5C058] shrink-0" />
+              <span>
+                {isAr ? "أوقات العمل: 4 م - 12 ص" : "Hours: 4 PM - 12 AM"}
+              </span>
+            </span>
+          </div>
         </div>
 
-        {/* Right Side: Social Media & Contact Links */}
+        {/* الجانب الآخر: روابط التواصل والحسابات */}
         <div className="flex items-center gap-6 text-stone-200">
           <a
             href="https://instagram.com/badem_sa"
             target="_blank"
-            rel="noreferrer"
-            className="hover:text-[#E5C058] flex items-center gap-1.5 font-medium transition duration-200"
+            rel="noopener noreferrer"
+            aria-label="Instagram"
+            className="hover:text-[#E5C058] flex items-center gap-1.5 font-bold transition duration-200 group cursor-pointer"
           >
-            <InstagramIcon className="w-4 h-4 text-[#E5C058]" />
+            <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[#E5C058] group-hover:scale-110 transition-transform">
+              <InstagramIcon className="w-3.5 h-3.5" />
+            </div>
             <span>@badem_sa</span>
           </a>
+
           <a
             href="tel:+966500000000"
-            className="hover:text-[#E5C058] flex items-center gap-1.5 font-medium transition duration-200"
+            aria-label={isAr ? "اتصل بنا" : "Call us"}
+            className="hover:text-[#E5C058] flex items-center gap-1.5 font-bold transition duration-200 group cursor-pointer"
           >
-            <Phone className="w-4 h-4 text-[#E5C058]" />
-            <span>اتصل بنا</span>
+            <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[#E5C058] group-hover:scale-110 transition-transform">
+              <Phone className="w-3.5 h-3.5" />
+            </div>
+            <span>{isAr ? "اتصل بنا" : "Contact Us"}</span>
           </a>
+
+          <span className="text-white/20 hidden sm:inline">|</span>
+
+          <span className="text-[10px] text-stone-400 font-medium">
+            © {currentYear} BADEM. {isAr ? "جميع الحقوق محفوظة" : "All rights reserved"}
+          </span>
         </div>
 
       </div>

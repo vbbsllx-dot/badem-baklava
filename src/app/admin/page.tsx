@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import Image from "next/image";
 import { 
   Plus, Trash2, Edit3, Package, Tag, Image as ImageIcon, 
   ShoppingBag, Layers, RefreshCw, Lock, KeyRound, LogOut, 
@@ -11,6 +12,7 @@ import {
 import { supabase } from "@/lib/supabase/supabase";
 import { OrdersManager } from "./OrdersManager";
 import { BoxBuilderSettings } from "./BoxBuilderSettings";
+
 // =========================================================================
 // 🌟 القسم الأول: المحركات الذكية، الترجمة الفورية، والأدوات المساعدة
 // =========================================================================
@@ -111,7 +113,7 @@ const QUICK_INGREDIENT_ICONS = ["🥜", "🧈", "🍯", "🌰", "🥛", "🌾", 
 export default function AdminDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
-  // 🛡️ حالات تسجيل الدخول والأمان (إيقاف مؤقت عند 3 محاولات خاطئة)
+  // حالات تسجيل الدخول
   const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -119,8 +121,9 @@ export default function AdminDashboard() {
 
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"orders" | "categories" | "products" | "banners" | "coupons" | "loyalty" | "box_settings" >("orders");
+  const [activeTab, setActiveTab] = useState<"orders" | "categories" | "products" | "banners" | "coupons" | "loyalty" | "box_settings">("orders");
 
   const [categories, setCategories] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -130,9 +133,11 @@ export default function AdminDashboard() {
   const [loyaltyRewards, setLoyaltyRewards] = useState<any[]>([]);
   const [pointsPerSar, setPointsPerSar] = useState<number>(10);
 
+  // إدارة الأقسام
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [newCat, setNewCat] = useState({ slug: "", name_ar: "", name_en: "", image_url: "", sort_order: 0 });
 
+  // إدارة المنتجات
   const [editingProdId, setEditingProdId] = useState<string | null>(null);
   const [newProd, setNewProd] = useState({
     title_ar: "", title_en: "", category_slug: "", base_price: "",
@@ -143,9 +148,11 @@ export default function AdminDashboard() {
   const [currIngNameEn, setCurrIngNameEn] = useState("");
   const [currIngIcon, setCurrIngIcon] = useState("🥜");
 
+  // إدارة البانرات
   const [editingBannerId, setEditingBannerId] = useState<string | null>(null);
   const [newBanner, setNewBanner] = useState({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" });
 
+  // إدارة الكوبونات
   const [editingCouponId, setEditingCouponId] = useState<string | null>(null);
   const [newCoupon, setNewCoupon] = useState({
     code: "",
@@ -156,8 +163,11 @@ export default function AdminDashboard() {
     expires_at: "",
   });
 
+  // إدارة نقاط الولاء
   const [editingRewardId, setEditingRewardId] = useState<string | null>(null);
   const [newLoyaltyReward, setNewLoyaltyReward] = useState({ title_ar: "", title_en: "", discount_percent: "", points_required: "" });
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     if (sessionStorage.getItem("badem_admin_auth") === "true") {
@@ -165,7 +175,6 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  // 🛡️ دالة التحقق الأمني من تسجيل الدخول وقفل الحساب لمدة ساعة عند 3 محاولات فاشلة
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
@@ -181,7 +190,7 @@ export default function AdminDashboard() {
         return;
       }
 
-      // 1. فحص هل الحساب محظور مؤقتاً بسبب 3 محاولات فاشلة سابقة
+      // فحص الحظر المؤقت
       const lockDataStr = localStorage.getItem(`badem_lock_${cleanUser}`);
       if (lockDataStr) {
         const lockData = JSON.parse(lockDataStr);
@@ -192,28 +201,24 @@ export default function AdminDashboard() {
           setIsLoggingIn(false);
           return;
         } else {
-          // انتهى وقت الحظر، نزيل القفل
           localStorage.removeItem(`badem_lock_${cleanUser}`);
           localStorage.removeItem(`badem_fails_${cleanUser}`);
         }
       }
 
-      // 2. التحقق من قاعدة البيانات (جدول admins)
-      // ملاحظة: الجدول يحتوي على أعمدة username و pin_code (التي نستخدمها ككلمة مرور)
       const { data: adminData, error } = await supabase
         .from("admins")
         .select("*")
         .eq("username", cleanUser)
-        .single();
+        .maybeSingle();
 
       if (error || !adminData || adminData.pin_code !== cleanPass) {
-        // حساب عدد المحاولات الفاشلة
         const failsKey = `badem_fails_${cleanUser}`;
         const currentFails = Number(localStorage.getItem(failsKey) || 0) + 1;
         localStorage.setItem(failsKey, String(currentFails));
 
         if (currentFails >= 3) {
-          const lockUntil = new Date().getTime() + 60 * 60 * 1000; // حظر لمدة ساعة كاملة
+          const lockUntil = new Date().getTime() + 60 * 60 * 1000;
           localStorage.setItem(`badem_lock_${cleanUser}`, JSON.stringify({ lockUntil }));
           setLoginError("🚨 تم إدخال كلمة المرور خاطئة 3 مرات متتالية! تم إيقاف الحساب مؤقتاً لمدة ساعة كاملة للأمان.");
         } else {
@@ -223,7 +228,6 @@ export default function AdminDashboard() {
         return;
       }
 
-      // 3. نجاح تسجيل الدخول
       localStorage.removeItem(`badem_fails_${cleanUser}`);
       localStorage.removeItem(`badem_lock_${cleanUser}`);
       setIsAuthenticated(true);
@@ -236,29 +240,40 @@ export default function AdminDashboard() {
     }
   };
 
-  const playLuxuryOrderAlert = () => {
+  const playLuxuryOrderAlert = useCallback(() => {
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtxClass) return;
+
+      if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
+        audioCtxRef.current = new AudioCtxClass();
+      }
+
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume();
+
       const now = ctx.currentTime;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+
       osc.type = "sine";
       osc.frequency.setValueAtTime(587.33, now);
       osc.frequency.exponentialRampToValueAtTime(880, now + 0.15);
+
       gain.gain.setValueAtTime(0.3, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
       osc.connect(gain);
       gain.connect(ctx.destination);
+
       osc.start(now);
       osc.stop(now + 1.2);
     } catch (e) {
-      console.log("Audio trigger error:", e);
+      console.warn("Audio trigger non-blocking error:", e);
     }
-  };
+  }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [catRes, prodRes, banRes, coupRes, ordRes, loyRes, setRes] = await Promise.all([
@@ -268,13 +283,16 @@ export default function AdminDashboard() {
         supabase.from("coupons").select("*").order("created_at", { ascending: false }),
         supabase.from("orders").select("*").order("created_at", { ascending: false }),
         supabase.from("loyalty_rewards").select("*").order("points_required", { ascending: true }),
-        supabase.from("store_settings").select("*").eq("id", "loyalty").single(),
+        supabase.from("store_settings").select("*").eq("id", "loyalty").maybeSingle(),
       ]);
 
       if (catRes.data) {
         setCategories(catRes.data);
-        if (catRes.data.length > 0 && !newProd.category_slug) {
-          setNewProd((prev) => ({ ...prev, category_slug: catRes.data[0].slug }));
+        if (catRes.data.length > 0) {
+          setNewProd((prev) => ({
+            ...prev,
+            category_slug: prev.category_slug || catRes.data[0].slug,
+          }));
         }
       }
       if (prodRes.data) setProducts(prodRes.data);
@@ -284,10 +302,11 @@ export default function AdminDashboard() {
       if (loyRes.data) setLoyaltyRewards(loyRes.data);
       if (setRes.data?.points_per_sar) setPointsPerSar(Number(setRes.data.points_per_sar));
     } catch (e) {
-      console.error(e);
+      console.error("Error fetching admin data:", e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -304,7 +323,7 @@ export default function AdminDashboard() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchData, playLuxuryOrderAlert]);
 
   const handleCategoryNameArChange = (value: string) => {
     const translated = translateToGourmetEnglish(value);
@@ -356,8 +375,8 @@ export default function AdminDashboard() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert("حجم الصورة كبير جداً، يرجى اختيار صورة أقل من 5 ميجابايت");
+    if (file.size > 8 * 1024 * 1024) {
+      alert("حجم الصورة كبير جداً، يرجى اختيار صورة أقل من 8 ميجابايت");
       return;
     }
 
@@ -375,7 +394,7 @@ export default function AdminDashboard() {
       if (target === "product") setNewProd((prev) => ({ ...prev, image_url: data.url }));
       if (target === "banner") setNewBanner((prev) => ({ ...prev, image_url: data.url }));
     } catch (err: any) {
-      alert("خطأ أثناء رفع الصورة: " + err.message);
+      alert("خطأ أثناء معالجة ورفع الصورة: " + err.message);
     } finally {
       setUploadingImage(false);
       e.target.value = "";
@@ -418,14 +437,16 @@ export default function AdminDashboard() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProd.title_ar || !newProd.base_price || !newProd.image_url) return alert("يرجى إكمال بيانات المنتج الأساسية");
+    if (!newProd.title_ar || !newProd.base_price || !newProd.image_url) {
+      return alert("يرجى إكمال بيانات المنتج الأساسية");
+    }
 
     setIsSubmitting(true);
     try {
       const payload = {
         title_ar: newProd.title_ar.trim(),
         title_en: newProd.title_en.trim() || translateToGourmetEnglish(newProd.title_ar),
-        category_slug: newProd.category_slug || (categories[0]?.slug ?? "Baklava"),
+        category_slug: newProd.category_slug || (categories[0]?.slug ?? "baklava"),
         base_price: parseFloat(newProd.base_price),
         original_price: newProd.original_price ? parseFloat(newProd.original_price) : null,
         has_discount: Boolean(newProd.original_price),
@@ -543,7 +564,7 @@ export default function AdminDashboard() {
     setEditingCouponId(c.id);
     setNewCoupon({
       code: c.code || "",
-      discount_percent: String(c.discount_percent || ""),
+      discount_percent: String(c.discount_percent ?? ""),
       one_per_customer: Boolean(c.one_per_customer),
       max_uses: c.max_uses ? String(c.max_uses) : "",
       min_order_amount: c.min_order_amount ? String(c.min_order_amount) : "",
@@ -616,9 +637,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // شاشة تسجيل الدخول الآمنة عبر قاعدة البيانات مع ميزة القفل لمدة ساعة
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#FAF5ED] flex items-center justify-center p-4">
@@ -644,7 +662,7 @@ export default function AdminDashboard() {
                   placeholder="admin"
                   className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-4 py-3 text-xs font-bold focus:outline-hidden focus:border-[#4A0E17]"
                 />
-                <User className="w-4 h-4 text-stone-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                <User className="w-4 h-4 text-stone-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
 
@@ -659,7 +677,7 @@ export default function AdminDashboard() {
                   placeholder="••••••••"
                   className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-4 py-3 text-xs font-bold focus:outline-hidden focus:border-[#4A0E17]"
                 />
-                <KeyRound className="w-4 h-4 text-stone-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                <KeyRound className="w-4 h-4 text-stone-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
 
@@ -673,7 +691,7 @@ export default function AdminDashboard() {
             <button
               type="submit"
               disabled={isLoggingIn}
-              className="w-full bg-[#4A0E17] hover:bg-[#36070E] text-white font-black py-3.5 rounded-2xl text-xs shadow-lg cursor-pointer flex items-center justify-center gap-2 transition"
+              className="w-full bg-[#4A0E17] hover:bg-[#36070E] active:scale-95 text-white font-black py-3.5 rounded-2xl text-xs shadow-lg cursor-pointer flex items-center justify-center gap-2 transition"
             >
               {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>تسجيل الدخول الآمن</span>}
             </button>
@@ -687,21 +705,38 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-[#FAF5ED] text-[#2D2321] p-4 md:p-8 font-sans pb-24">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* Header Bar */}
+        {/* شريط العنوان العلوي */}
         <div className="bg-[#4A0E17] text-white p-6 rounded-3xl shadow-xl flex flex-wrap items-center justify-between gap-4 border border-[#C59B27]/30">
           <div>
             <span className="text-[10px] tracking-widest text-[#E5C058] font-black uppercase font-brand">BADEM MASTER CONTROL</span>
             <h1 className="text-2xl font-black text-white mt-1">لوحة تحكم المتجر وقواعد البيانات</h1>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={playLuxuryOrderAlert} title="تجربة الصوت" className="p-2.5 bg-white/10 text-[#E5C058] rounded-xl cursor-pointer hover:bg-white/20 transition">
+            <button
+              type="button"
+              onClick={playLuxuryOrderAlert}
+              title="تجربة صوت التنبيه"
+              className="p-2.5 bg-white/10 text-[#E5C058] rounded-xl cursor-pointer hover:bg-white/20 active:scale-90 transition"
+            >
               <Volume2 className="w-4 h-4" />
             </button>
-            <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 bg-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer hover:bg-white/20 transition">
+            <button
+              type="button"
+              onClick={fetchData}
+              disabled={loading}
+              className="flex items-center gap-2 bg-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer hover:bg-white/20 active:scale-95 transition"
+            >
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               <span>تحديث</span>
             </button>
-            <button onClick={() => { setIsAuthenticated(false); sessionStorage.removeItem("badem_admin_auth"); }} className="flex items-center gap-1.5 bg-rose-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer hover:bg-rose-700 transition">
+            <button
+              type="button"
+              onClick={() => {
+                setIsAuthenticated(false);
+                sessionStorage.removeItem("badem_admin_auth");
+              }}
+              className="flex items-center gap-1.5 bg-rose-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer hover:bg-rose-700 active:scale-95 transition"
+            >
               <LogOut className="w-4 h-4" />
               <span>خروج</span>
             </button>
@@ -716,16 +751,19 @@ export default function AdminDashboard() {
             { id: "products", label: `المنتجات (${products.length})`, icon: Package },
             { id: "banners", label: `العروض والبانرات (${banners.length})`, icon: ImageIcon },
             { id: "coupons", label: `الكوبونات والأمان 🛡️ (${coupons.length})`, icon: Tag },
-            { id: "loyalty", label: `نقاط المكافآت  (${loyaltyRewards.length})`, icon: Award },
-            { id: "box_settings", label: "خدمة البوكسات 📦", icon: PackagePlus }, // 🌟 هذا هو السطر الناقص!
+            { id: "loyalty", label: `نقاط المكافآت (${loyaltyRewards.length})`, icon: Award },
+            { id: "box_settings", label: "خدمة البوكسات 📦", icon: PackagePlus },
           ].map((tab) => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`px-4 py-2.5 rounded-2xl text-xs font-black transition flex items-center gap-2 shrink-0 cursor-pointer ${
-                  activeTab === tab.id ? "bg-[#4A0E17] text-white shadow-md" : "bg-white text-stone-600 hover:bg-stone-100"
+                className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
+                  activeTab === tab.id
+                    ? "bg-[#4A0E17] text-white shadow-md font-black"
+                    : "bg-white text-stone-600 hover:bg-stone-100"
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -757,7 +795,10 @@ export default function AdminDashboard() {
                 {editingCatId && (
                   <button
                     type="button"
-                    onClick={() => { setEditingCatId(null); setNewCat({ slug: "", name_ar: "", name_en: "", image_url: "", sort_order: 0 }); }}
+                    onClick={() => {
+                      setEditingCatId(null);
+                      setNewCat({ slug: "", name_ar: "", name_en: "", image_url: "", sort_order: 0 });
+                    }}
                     className="text-xs text-rose-600 font-bold hover:underline cursor-pointer"
                   >
                     إلغاء التعديل ✕
@@ -809,7 +850,13 @@ export default function AdminDashboard() {
                     <label className="flex items-center gap-2 px-4 py-2.5 bg-[#4A0E17] text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-[#36070E] transition shrink-0">
                       <Upload className="w-4 h-4" />
                       <span>{uploadingImage ? "جاري الرفع..." : "اختر صورة مفرغة"}</span>
-                      <input type="file" accept="image/*" disabled={uploadingImage} onChange={(e) => handleFileUpload(e, "category")} className="hidden" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingImage}
+                        onChange={(e) => handleFileUpload(e, "category")}
+                        className="hidden"
+                      />
                     </label>
                     <input
                       type="text"
@@ -818,7 +865,11 @@ export default function AdminDashboard() {
                       onChange={(e) => setNewCat({ ...newCat, image_url: e.target.value })}
                       className="flex-1 bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 text-xs font-medium"
                     />
-                    {newCat.image_url && <img src={newCat.image_url} alt="" className="w-10 h-10 rounded-xl object-contain border bg-stone-100" />}
+                    {newCat.image_url && (
+                      <div className="relative w-10 h-10 rounded-xl overflow-hidden border bg-stone-100 shrink-0">
+                        <Image src={newCat.image_url} alt="" fill sizes="40px" className="object-contain" />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -830,7 +881,13 @@ export default function AdminDashboard() {
                   editingCatId ? "bg-amber-700 hover:bg-amber-800" : "bg-[#4A0E17] hover:bg-[#36070E]"
                 }`}
               >
-                {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingCatId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {isSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : editingCatId ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
+                )}
                 <span>{editingCatId ? "حفظ التعديلات" : "حفظ القسم"}</span>
               </button>
             </form>
@@ -838,16 +895,32 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {categories.map((cat) => (
                 <div key={cat.id} className="bg-white p-4 rounded-3xl border border-stone-200 flex items-center justify-between gap-3 shadow-2xs">
-                  <img src={cat.image_url} alt="" className="w-12 h-12 rounded-2xl object-contain" />
+                  <div className="relative w-12 h-12 rounded-2xl overflow-hidden bg-stone-50 border border-stone-100 shrink-0">
+                    <Image src={cat.image_url} alt={cat.name_ar} fill sizes="48px" className="object-contain" />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="font-bold text-xs truncate">{cat.name_ar}</h4>
                     <span className="text-[10px] text-stone-400 block truncate">{cat.name_en}</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => { setEditingCatId(cat.id); setNewCat(cat); window.scrollTo({ top: 0, behavior: "smooth" }); }} title="تعديل" className="p-1.5 text-stone-400 hover:text-amber-600 cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCatId(cat.id);
+                        setNewCat(cat);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      title="تعديل"
+                      className="p-1.5 text-stone-400 hover:text-amber-600 cursor-pointer"
+                    >
                       <Edit3 className="w-4 h-4" />
                     </button>
-                    <button onClick={() => handleDelete("categories", cat.id)} title="حذف" className="p-1.5 text-stone-400 hover:text-rose-600 cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete("categories", cat.id)}
+                      title="حذف"
+                      className="p-1.5 text-stone-400 hover:text-rose-600 cursor-pointer"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -857,12 +930,12 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 🌟 هذا الجزء سليم 100% اتركه كما هو */}
-{activeTab === "box_settings" && (
-  <div className="pt-2">
-    <BoxBuilderSettings />
-  </div>
-)}
+        {/* خدمة البوكسات */}
+        {activeTab === "box_settings" && (
+          <div className="pt-2">
+            <BoxBuilderSettings />
+          </div>
+        )}
 
         {/* 3️⃣ تبويب إدارة المنتجات */}
         {activeTab === "products" && (
@@ -925,7 +998,9 @@ export default function AdminDashboard() {
                     onChange={(e) => setNewProd({ ...newProd, category_slug: e.target.value })}
                     className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 font-bold cursor-pointer"
                   >
-                    {categories.map((c) => (<option key={c.id} value={c.slug}>{c.name_ar}</option>))}
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.slug}>{c.name_ar}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -948,7 +1023,7 @@ export default function AdminDashboard() {
                     type="number"
                     step="0.01"
                     placeholder="10.00"
-                    value={newProd.original_price}
+                    value={newProd.original_price ?? ""}
                     onChange={(e) => setNewProd({ ...newProd, original_price: e.target.value })}
                     className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl p-2.5 font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
@@ -960,7 +1035,13 @@ export default function AdminDashboard() {
                     <label className="flex items-center gap-1.5 px-3 py-2 bg-[#4A0E17] text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-[#36070E] shrink-0">
                       <Upload className="w-3.5 h-3.5" />
                       <span>{uploadingImage ? "رفع..." : "رفع ملف"}</span>
-                      <input type="file" accept="image/*" disabled={uploadingImage} onChange={(e) => handleFileUpload(e, "product")} className="hidden" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingImage}
+                        onChange={(e) => handleFileUpload(e, "product")}
+                        className="hidden"
+                      />
                     </label>
                     <input
                       type="text"
@@ -1009,7 +1090,11 @@ export default function AdminDashboard() {
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-1 bg-white p-1.5 rounded-xl border border-stone-200">
                     <span className="text-base">{currIngIcon}</span>
-                    <select value={currIngIcon} onChange={(e) => setCurrIngIcon(e.target.value)} className="bg-transparent text-xs font-bold focus:outline-hidden cursor-pointer">
+                    <select
+                      value={currIngIcon}
+                      onChange={(e) => setCurrIngIcon(e.target.value)}
+                      className="bg-transparent text-xs font-bold focus:outline-hidden cursor-pointer"
+                    >
                       {QUICK_INGREDIENT_ICONS.map((ic) => (<option key={ic} value={ic}>{ic}</option>))}
                     </select>
                   </div>
@@ -1050,9 +1135,16 @@ export default function AdminDashboard() {
                   <div className="flex flex-wrap gap-2 pt-2 border-t border-stone-200/60">
                     {productIngredients.map((item, idx) => (
                       <span key={idx} className="inline-flex items-center gap-1.5 bg-white border border-stone-300 px-3 py-1 rounded-xl text-xs font-bold text-stone-800">
-                        <span>{item.icon}</span><span>{item.nameAr}</span>
+                        <span>{item.icon}</span>
+                        <span>{item.nameAr}</span>
                         <span className="text-[10px] text-stone-400">({item.nameEn})</span>
-                        <button type="button" onClick={() => setProductIngredients((prev) => prev.filter((_, i) => i !== idx))} className="text-stone-400 hover:text-rose-600 mr-1 text-sm cursor-pointer">×</button>
+                        <button
+                          type="button"
+                          onClick={() => setProductIngredients((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-stone-400 hover:text-rose-600 mr-1 text-sm cursor-pointer"
+                        >
+                          ×
+                        </button>
                       </span>
                     ))}
                   </div>
@@ -1066,7 +1158,13 @@ export default function AdminDashboard() {
                   editingProdId ? "bg-amber-700 hover:bg-amber-800" : "bg-[#4A0E17] hover:bg-[#36070E]"
                 }`}
               >
-                {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingProdId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {isSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : editingProdId ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
+                )}
                 <span>{editingProdId ? "حفظ تعديلات المنتج" : "حفظ المنتج"}</span>
               </button>
             </form>
@@ -1074,17 +1172,45 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {products.map((p) => (
                 <div key={p.id} className="bg-white p-4 rounded-3xl border border-stone-200 flex items-center justify-between gap-3 shadow-2xs">
-                  <img src={p.image_url} alt="" className="w-16 h-16 rounded-2xl object-cover" />
+                  <div className="relative w-16 h-16 rounded-2xl overflow-hidden border border-stone-100 bg-stone-50 shrink-0">
+                    <Image src={p.image_url || "/hero-baklava.png"} alt={p.title_ar} fill sizes="64px" className="object-cover" />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="font-bold text-xs truncate">{p.title_ar}</h4>
                     <span className="text-[10px] text-stone-400 block truncate">{p.title_en}</span>
-                    <span className="text-xs font-black text-[#4A0E17] block">{p.base_price} ر.س</span>
+                    <span className="text-xs font-black text-[#4A0E17] block font-mono">
+                      {Number(p.base_price).toFixed(2)} ر.س
+                    </span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => { setEditingProdId(p.id); setNewProd(p); setProductIngredients(p.ingredients || []); window.scrollTo({ top: 0, behavior: "smooth" }); }} title="تعديل" className="p-2 text-stone-400 hover:text-amber-600 cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingProdId(p.id);
+                        setNewProd({
+                          title_ar: p.title_ar || "",
+                          title_en: p.title_en || "",
+                          category_slug: p.category_slug || categories[0]?.slug || "",
+                          base_price: p.base_price ? String(p.base_price) : "",
+                          original_price: p.original_price ? String(p.original_price) : "",
+                          image_url: p.image_url || "",
+                          description_ar: p.description_ar || "",
+                          description_en: p.description_en || "",
+                        });
+                        setProductIngredients(p.ingredients || []);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      title="تعديل"
+                      className="p-2 text-stone-400 hover:text-amber-600 cursor-pointer"
+                    >
                       <Edit3 className="w-4 h-4" />
                     </button>
-                    <button onClick={() => handleDelete("products", p.id)} title="حذف" className="p-2 text-stone-400 hover:text-rose-600 cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete("products", p.id)}
+                      title="حذف"
+                      className="p-2 text-stone-400 hover:text-rose-600 cursor-pointer"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -1093,7 +1219,6 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
-
 
         {/* 4️⃣ تبويب إدارة العروض والبانرات */}
         {activeTab === "banners" && (
@@ -1107,7 +1232,10 @@ export default function AdminDashboard() {
                 {editingBannerId && (
                   <button
                     type="button"
-                    onClick={() => { setEditingBannerId(null); setNewBanner({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" }); }}
+                    onClick={() => {
+                      setEditingBannerId(null);
+                      setNewBanner({ title_ar: "", title_en: "", subtitle_ar: "", subtitle_en: "", tag_ar: "عرض حصري", image_url: "" });
+                    }}
                     className="text-xs text-rose-600 font-bold hover:underline cursor-pointer"
                   >
                     إلغاء التعديل ✕
@@ -1173,7 +1301,13 @@ export default function AdminDashboard() {
                     <label className="flex items-center gap-1.5 px-3.5 py-2.5 bg-[#4A0E17] text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-[#36070E] shrink-0">
                       <Upload className="w-3.5 h-3.5" />
                       <span>{uploadingImage ? "جاري الرفع..." : "رفع من الجهاز"}</span>
-                      <input type="file" accept="image/*" disabled={uploadingImage} onChange={(e) => handleFileUpload(e, "banner")} className="hidden" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingImage}
+                        onChange={(e) => handleFileUpload(e, "banner")}
+                        className="hidden"
+                      />
                     </label>
                     <input
                       type="text"
@@ -1193,7 +1327,13 @@ export default function AdminDashboard() {
                   editingBannerId ? "bg-amber-700 hover:bg-amber-800" : "bg-[#4A0E17] hover:bg-[#36070E]"
                 }`}
               >
-                {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingBannerId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {isSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : editingBannerId ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
+                )}
                 <span>{editingBannerId ? "حفظ تعديلات العرض" : "نشر العرض"}</span>
               </button>
             </form>
@@ -1205,12 +1345,28 @@ export default function AdminDashboard() {
                     <h4 className="font-bold text-xs leading-tight line-clamp-2">{b.title_ar || b.title_en}</h4>
                     <p className="text-[10px] text-stone-300 line-clamp-2">{b.subtitle_ar || b.subtitle_en}</p>
                   </div>
-                  <img src={b.image_url} alt="" className="w-24 h-24 rounded-2xl object-cover border border-white/10" />
+                  <div className="relative w-24 h-24 rounded-2xl overflow-hidden border border-white/10 shrink-0">
+                    <Image src={b.image_url} alt="" fill sizes="96px" className="object-cover" />
+                  </div>
                   <div className="absolute top-2 left-2 flex items-center gap-1">
-                    <button onClick={() => { setEditingBannerId(b.id); setNewBanner(b); window.scrollTo({ top: 0, behavior: "smooth" }); }} title="تعديل" className="bg-black/60 hover:bg-amber-600 text-white p-1.5 rounded-lg transition cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBannerId(b.id);
+                        setNewBanner(b);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      title="تعديل"
+                      className="bg-black/60 hover:bg-amber-600 text-white p-1.5 rounded-lg transition cursor-pointer"
+                    >
                       <Edit3 className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => handleDelete("banners", b.id)} title="حذف" className="bg-rose-600 hover:bg-rose-700 text-white p-1.5 rounded-lg transition cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete("banners", b.id)}
+                      title="حذف"
+                      className="bg-rose-600 hover:bg-rose-700 text-white p-1.5 rounded-lg transition cursor-pointer"
+                    >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -1310,7 +1466,7 @@ export default function AdminDashboard() {
                   <div>
                     <label className="block font-bold mb-1 flex items-center gap-1 text-stone-700">
                       <Users className="w-3.5 h-3.5 text-[#4A0E17]" />
-                      <span>العدد الإجمالي المسموح به (سقف الطلبات):</span>
+                      <span>العدد الإجمالي المسموح به:</span>
                     </label>
                     <input
                       type="number"
@@ -1363,7 +1519,13 @@ export default function AdminDashboard() {
                   editingCouponId ? "bg-amber-700 hover:bg-amber-800" : "bg-[#4A0E17] hover:bg-[#36070E]"
                 }`}
               >
-                {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingCouponId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {isSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : editingCouponId ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
+                )}
                 <span>{editingCouponId ? "حفظ تعديلات الكوبون" : "تفعيل الكوبون المتقدم"}</span>
               </button>
             </form>
@@ -1390,10 +1552,20 @@ export default function AdminDashboard() {
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => startEditCoupon(c)} title="تعديل" className="text-stone-400 hover:text-amber-600 p-1 cursor-pointer">
+                        <button
+                          type="button"
+                          onClick={() => startEditCoupon(c)}
+                          title="تعديل"
+                          className="text-stone-400 hover:text-amber-600 p-1 cursor-pointer"
+                        >
                           <Edit3 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDelete("coupons", c.id)} title="حذف" className="text-stone-400 hover:text-rose-600 p-1 cursor-pointer">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete("coupons", c.id)}
+                          title="حذف"
+                          className="text-stone-400 hover:text-rose-600 p-1 cursor-pointer"
+                        >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -1435,7 +1607,6 @@ export default function AdminDashboard() {
         {/* 6️⃣ تبويب نقاط المكافآت والولاء */}
         {activeTab === "loyalty" && (
           <div className="space-y-6">
-            
             <div className="bg-white p-6 rounded-3xl border border-stone-200/80 shadow-2xs space-y-4">
               <div className="flex items-center gap-3.5">
                 <div className="w-12 h-12 rounded-2xl bg-[#4A0E17]/10 flex items-center justify-center text-[#4A0E17] border border-[#C59B27]/30 shadow-2xs shrink-0">
@@ -1461,7 +1632,7 @@ export default function AdminDashboard() {
                     onChange={(e) => setPointsPerSar(Number(e.target.value))}
                     className="w-full bg-[#FAF5ED] border border-stone-200 rounded-2xl px-4 py-3 text-xs font-black text-[#4A0E17] focus:outline-hidden focus:border-[#4A0E17] shadow-2xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400 pointer-events-none">
                     نقطة / 1 ر.س
                   </span>
                 </div>
@@ -1486,7 +1657,10 @@ export default function AdminDashboard() {
                 {editingRewardId && (
                   <button
                     type="button"
-                    onClick={() => { setEditingRewardId(null); setNewLoyaltyReward({ title_ar: "", title_en: "", discount_percent: "", points_required: "" }); }}
+                    onClick={() => {
+                      setEditingRewardId(null);
+                      setNewLoyaltyReward({ title_ar: "", title_en: "", discount_percent: "", points_required: "" });
+                    }}
                     className="text-xs text-rose-600 font-bold hover:underline cursor-pointer"
                   >
                     إلغاء التعديل ✕
@@ -1559,7 +1733,13 @@ export default function AdminDashboard() {
                   editingRewardId ? "bg-amber-700 hover:bg-amber-800" : "bg-[#4A0E17] hover:bg-[#36070E]"
                 }`}
               >
-                {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingRewardId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {isSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : editingRewardId ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5" />
+                )}
                 <span>{editingRewardId ? "حفظ تعديلات المكافأة" : "حفظ المكافأة"}</span>
               </button>
             </form>
@@ -1579,10 +1759,24 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => { setEditingRewardId(r.id); setNewLoyaltyReward(r); window.scrollTo({ top: 0, behavior: "smooth" }); }} title="تعديل" className="text-stone-400 hover:text-amber-600 p-2 cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingRewardId(r.id);
+                        setNewLoyaltyReward(r);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      title="تعديل"
+                      className="text-stone-400 hover:text-amber-600 p-2 cursor-pointer"
+                    >
                       <Edit3 className="w-4 h-4" />
                     </button>
-                    <button onClick={() => handleDelete("loyalty_rewards", r.id)} title="حذف" className="text-stone-400 hover:text-rose-600 p-2 cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete("loyalty_rewards", r.id)}
+                      title="حذف"
+                      className="text-stone-400 hover:text-rose-600 p-2 cursor-pointer"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>

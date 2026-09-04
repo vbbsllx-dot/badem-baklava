@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import Image from "next/image";
 import { Plus, Heart } from "lucide-react";
 import { Product } from "@/types";
 import { useLanguage } from "@/context/LanguageContext";
@@ -14,10 +15,12 @@ interface ProductCardProps {
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail }) => {
-  const { language, t } = useLanguage();
+  const { language } = useLanguage();
   const { addToCart } = useCart();
   const { isFavorite, toggleFavorite } = useWishlist();
   const { showToast } = useToast();
+
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   const title = language === "ar" ? product.titleAr : product.titleEn;
   const currencySymbol = language === "ar" ? "ر.س " : "SAR ";
@@ -68,13 +71,18 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
       onClick={() => onOpenDetail(product)}
       className="bg-[#FAF5ED] rounded-3xl p-3 border border-[#4A0E17]/10 shadow-xs hover:shadow-md transition-all duration-300 flex flex-col justify-between cursor-pointer group relative"
     >
-      {/* صورة المنتج وشارة الخصم وزر المفضلة */}
-      <div className="relative overflow-hidden rounded-2xl bg-white aspect-square flex items-center justify-center p-1">
+      {/* إطار صورة المنتج الذكي مع شارة الخصم وزر المفضلة */}
+      <div className="relative overflow-hidden rounded-2xl bg-white aspect-square w-full">
         
+        {/* تأثير وميض خافت أثناء تحميل الصورة لمنع الفراغ الأبيض */}
+        {!imageLoaded && (
+          <div className="absolute inset-0 bg-stone-100 animate-pulse" />
+        )}
+
         {/* ❤️ زر المفضلة التفاعلي */}
         <button
           onClick={handleFavoriteClick}
-          className="absolute top-2 left-2 rtl:left-2 rtl:right-auto ltr:right-2 ltr:left-auto z-10 w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md transition transform active:scale-75 hover:scale-110"
+          className="absolute top-2 left-2 rtl:left-2 rtl:right-auto ltr:right-2 ltr:left-auto z-10 w-7 h-7 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center shadow-md transition transform active:scale-75 hover:scale-110 cursor-pointer"
           title="إضافة للمفضلة"
         >
           <Heart
@@ -91,11 +99,18 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
           </div>
         )}
 
-        <img
-          src={product.image}
-          alt={title}
-          className="w-full h-full object-cover rounded-xl group-hover:scale-105 transition duration-500"
+        {/* ⚡ مكون الصورة المطور والمدعوم بالكاش السحابي */}
+        <Image
+          src={product.image || "/hero-baklava.png"}
+          alt={title || "صنف فاخر"}
+          fill
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 300px"
+          quality={80}
           loading="lazy"
+          onLoad={() => setImageLoaded(true)}
+          className={`object-cover rounded-2xl group-hover:scale-105 transition-all duration-500 ${
+            imageLoaded ? "opacity-100 scale-100" : "opacity-0 scale-95"
+          }`}
         />
       </div>
 
@@ -122,7 +137,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
 
         <button
           onClick={handleQuickAdd}
-          className="w-7 h-7 rounded-full bg-[#4A0E17] hover:bg-[#36070E] text-white flex items-center justify-center shadow-md transition transform active:scale-90 hover:scale-110"
+          className="w-7 h-7 rounded-full bg-[#4A0E17] hover:bg-[#36070E] text-white flex items-center justify-center shadow-md transition transform active:scale-90 hover:scale-110 cursor-pointer"
           title="إضافة للسلة"
         >
           <Plus className="w-4 h-4 font-bold" />

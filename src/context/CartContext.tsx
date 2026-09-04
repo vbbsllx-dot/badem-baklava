@@ -1,10 +1,18 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { CartItem } from "@/types";
 import { supabase } from "@/lib/supabase/supabase";
 
-interface FlyingItem {
+export interface FlyingItem {
   id: string;
   image: string;
   startX: number;
@@ -32,10 +40,12 @@ interface CartContextType {
   couponCode: string;
   couponMessage: { text: string; isError: boolean } | null;
   applyCoupon: (code: string) => Promise<void>;
-  removeCoupon: () => void; // ✨ دالة جديدة لمسح الكوبون وإلغاء حالة الخطأ
+  removeCoupon: () => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
+
+const CART_STORAGE_KEY = "badem_cart_items";
 
 export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -43,49 +53,107 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   const [flyingItems, setFlyingItems] = useState<FlyingItem[]>([]);
   const [isCartBouncing, setIsCartBouncing] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+
+  // حالات الكوبون والخصم
   const [discountPercent, setDiscountPercent] = useState(0);
   const [couponCode, setCouponCode] = useState("");
+  const [couponMinAmount, setCouponMinAmount] = useState<number | null>(null);
   const [couponMessage, setCouponMessage] = useState<{ text: string; isError: boolean } | null>(null);
 
-  // 1. استرجاع عناصر السلة المخزنة عند تحميل الصفحة
+  // مؤقتات الحركات لمنع تسرب الذاكرة
+  const animationTimers = useRef<NodeJS.Timeout[]>([]);
+
   useEffect(() => {
-    try {
-      const savedCart = localStorage.getItem("badem_cart_items");
-      if (savedCart) {
-        setCart(JSON.parse(savedCart));
-      }
-    } catch (e) {
-      console.error("Failed to load cart from localStorage", e);
-    }
-    setIsCartLoaded(true);
+    return () => {
+      animationTimers.current.forEach(clearTimeout);
+    };
   }, []);
 
-  // 2. حفظ عناصر السلة تلقائياً عند إضافة أو حذف أي منتج
+  // 1. استرجاع السلة بأمان عند تحميل المتصفح
   useEffect(() => {
-    if (isCartLoaded) {
-      localStorage.setItem("badem_cart_items", JSON.stringify(cart));
+    try {
+      if (typeof window !== "undefined") {
+        const savedCart = localStorage.getItem(CART_STORAGE_KEY);
+        if (savedCart) {
+          const parsed = JSON.parse(savedCart);
+          if (Array.isArray(parsed)) {
+            setCart(parsed);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load cart from localStorage:", e);
+    } finally {
+      setIsCartLoaded(true);
+    }
+  }, []);
+
+  // 2. حفظ السلة تلقائياً عند أي تعديل (بعد اكتمال التحميل الأولي فقط)
+  useEffect(() => {
+    if (isCartLoaded && typeof window !== "undefined") {
+      try {
+        localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+      } catch (e) {
+        console.warn("Failed to persist cart to localStorage:", e);
+      }
     }
   }, [cart, isCartLoaded]);
 
-  const triggerFlyAnimation = (image: string, event?: React.MouseEvent) => {
+  // الحسابات الرياضية المجمعة عبر useMemo لتفادي إعادة الحساب غير الضرورية
+  const subtotal = useMemo(() => {
+    return cart.reduce((acc, item) => {
+      const price = Number(item.price) || 0;
+      const qty = Number(item.quantity) || 1;
+      return acc + price * qty;
+    }, 0);
+  }, [cart]);
+
+  const totalItemsCount = useMemo(() => {
+    return cart.reduce((acc, item) => acc + (Number(item.quantity) || 1), 0);
+  }, [cart]);
+
+  // 3. التحقق التلقائي من شرط الكوبون إذا انخفضت السلة عن الحد الأدنى بعد حذف صنف
+  useEffect(() => {
+    if (couponCode && couponMinAmount !== null && subtotal < couponMinAmount) {
+      setDiscountPercent(0);
+      setCouponMessage({
+        text: `⚠️ تم إلغاء الكوبون لأن قيمة السلة أصبحت أقل من الحد الأدنى (${couponMinAmount} ر.س)`,
+        isError: true,
+      });
+    }
+  }, [subtotal, couponCode, couponMinAmount]);
+
+  const discountAmount = useMemo(() => {
+    return (subtotal * discountPercent) / 100;
+  }, [subtotal, discountPercent]);
+
+  const deliveryFee = useMemo(() => {
+    return cart.length > 0 ? 15 : 0;
+  }, [cart.length]);
+
+  const totalAmount = useMemo(() => {
+    return Math.max(0, subtotal - discountAmount + deliveryFee);
+  }, [subtotal, discountAmount, deliveryFee]);
+
+  // تشغيل حركة طيران المنتج وارتداد السلة
+  const triggerFlyAnimation = useCallback((image: string, event?: React.MouseEvent) => {
     if (typeof window === "undefined") return;
 
     let startX = window.innerWidth / 2;
     let startY = window.innerHeight / 2;
 
-    if (event && event.clientX && event.clientY) {
+    if (event?.clientX && event?.clientY) {
       startX = event.clientX;
       startY = event.clientY;
     }
 
-    const desktopCart = document.getElementById("cart-target-desktop");
-    const mobileCart = document.getElementById("cart-target-mobile");
+    const isDesktop = window.innerWidth >= 768;
+    const targetEl = isDesktop
+      ? document.getElementById("cart-target-desktop")
+      : document.getElementById("cart-target-mobile");
 
     let endX = window.innerWidth / 2;
-    let endY = window.innerHeight - 50;
-
-    const isDesktop = window.innerWidth >= 768;
-    const targetEl = isDesktop ? desktopCart : mobileCart;
+    let endY = isDesktop ? 40 : window.innerHeight - 50;
 
     if (targetEl) {
       const rect = targetEl.getBoundingClientRect();
@@ -94,7 +162,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     const newFlyingItem: FlyingItem = {
-      id: `${Date.now()}-${Math.random()}`,
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       image,
       startX,
       startY,
@@ -104,142 +172,217 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
     setFlyingItems((prev) => [...prev, newFlyingItem]);
 
-    setTimeout(() => {
+    const flyTimer = setTimeout(() => {
       setFlyingItems((prev) => prev.filter((i) => i.id !== newFlyingItem.id));
       setIsCartBouncing(true);
-      setTimeout(() => setIsCartBouncing(false), 300);
+
+      const bounceTimer = setTimeout(() => {
+        setIsCartBouncing(false);
+      }, 350);
+
+      animationTimers.current.push(bounceTimer);
     }, 430);
-  };
 
-  const addToCart = (newItem: Omit<CartItem, "quantity">, clickEvent?: React.MouseEvent) => {
-    triggerFlyAnimation(newItem.image, clickEvent);
+    animationTimers.current.push(flyTimer);
+  }, []);
 
-    setCart((prevCart) => {
-      const existingIndex = prevCart.findIndex(
-        (item) => item.id === newItem.id && item.portionNote === newItem.portionNote
-      );
+  // إضافة صنف للسلة
+  const addToCart = useCallback(
+    (newItem: Omit<CartItem, "quantity">, clickEvent?: React.MouseEvent) => {
+      triggerFlyAnimation(newItem.image || "/hero-baklava.png", clickEvent);
 
-      if (existingIndex > -1) {
-        const updated = [...prevCart];
-        updated[existingIndex].quantity += 1;
-        return updated;
-      } else {
+      setCart((prevCart) => {
+        const existingIndex = prevCart.findIndex(
+          (item) => item.id === newItem.id && item.portionNote === newItem.portionNote
+        );
+
+        if (existingIndex > -1) {
+          const updated = [...prevCart];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            quantity: updated[existingIndex].quantity + 1,
+          };
+          return updated;
+        }
+
         return [...prevCart, { ...newItem, quantity: 1 }];
-      }
-    });
-  };
+      });
+    },
+    [triggerFlyAnimation]
+  );
 
-  const updateQuantity = (index: number, delta: number) => {
+  // تحديث كمية صنف
+  const updateQuantity = useCallback((index: number, delta: number) => {
     setCart((prevCart) => {
-      const updated = [...prevCart];
-      updated[index].quantity += delta;
-      if (updated[index].quantity <= 0) {
-        return updated.filter((_, i) => i !== index);
+      if (!prevCart[index]) return prevCart;
+
+      const currentQty = prevCart[index].quantity;
+      const newQty = currentQty + delta;
+
+      if (newQty <= 0) {
+        return prevCart.filter((_, i) => i !== index);
       }
+
+      const updated = [...prevCart];
+      updated[index] = {
+        ...updated[index],
+        quantity: newQty,
+      };
       return updated;
     });
-  };
+  }, []);
 
-  const removeFromCart = (index: number) => {
+  // حذف صنف
+  const removeFromCart = useCallback((index: number) => {
     setCart((prevCart) => prevCart.filter((_, i) => i !== index));
-  };
+  }, []);
 
-  const clearCart = () => {
+  // تفريغ السلة بالكامل
+  const clearCart = useCallback(() => {
     setCart([]);
     setDiscountPercent(0);
     setCouponCode("");
+    setCouponMinAmount(null);
     setCouponMessage(null);
-    localStorage.removeItem("badem_cart_items");
-  };
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(CART_STORAGE_KEY);
+      } catch {
+        // تجاهل الأخطاء
+      }
+    }
+  }, []);
 
-  // ✨ دالة مسح وتفريغ الكوبون تماماً (تُستخدم عند رغبة العميل بإزالة الكوبون الخطأ)
-  const removeCoupon = () => {
+  // مسح الكوبون يدوياً
+  const removeCoupon = useCallback(() => {
     setCouponCode("");
     setDiscountPercent(0);
+    setCouponMinAmount(null);
     setCouponMessage(null);
-  };
+  }, []);
 
-  // حساب المجموع الفرعي أولاً لنتمكن من التحقق من الحد الأدنى للسلة
-  const subtotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  // تطبيق وفحص كود الخصم
+  const applyCoupon = useCallback(
+    async (code: string) => {
+      const cleanCode = code.trim().toUpperCase();
+      if (!cleanCode) return;
 
-  const applyCoupon = async (code: string) => {
-    const cleanCode = code.trim().toUpperCase();
-    if (!cleanCode) return;
-    
-    setCouponCode(cleanCode);
+      setCouponCode(cleanCode);
 
-    try {
-      const { data, error } = await supabase
-        .from("coupons")
-        .select("*")
-        .eq("code", cleanCode)
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from("coupons")
+          .select("*")
+          .eq("code", cleanCode)
+          .maybeSingle();
 
-      if (error || !data || data.is_active === false) {
-        setDiscountPercent(0);
-        setCouponMessage({ text: "كود الخصم غير صالح أو منتهي الصلاحية", isError: true });
-        return;
-      }
+        if (error || !data || data.is_active === false) {
+          setDiscountPercent(0);
+          setCouponMinAmount(null);
+          setCouponMessage({
+            text: "كود الخصم غير صالح أو تم إيقافه ❌",
+            isError: true,
+          });
+          return;
+        }
 
-      // التحقق من تاريخ الانتهاء
-      if (data.expires_at && new Date(data.expires_at) < new Date()) {
-        setDiscountPercent(0);
-        setCouponMessage({ text: "عذراً، انتهت صلاحية هذا الكود الترويجي", isError: true });
-        return;
-      }
+        // فحص انتهاء الصلاحية
+        if (data.expires_at && new Date(data.expires_at) < new Date()) {
+          setDiscountPercent(0);
+          setCouponMinAmount(null);
+          setCouponMessage({
+            text: "عذراً، انتهت صلاحية هذا الكود الترويجي ⏳",
+            isError: true,
+          });
+          return;
+        }
 
-      // التحقق من الحد الأدنى لقيمة السلة
-      if (data.min_order_amount && subtotal < Number(data.min_order_amount)) {
-        setDiscountPercent(0);
-        setCouponMessage({ 
-          text: `الحد الأدنى لتفعيل هذا الكود هو ${data.min_order_amount} ر.س`, 
-          isError: true 
+        // فحص الحد الأقصى للاستخدام
+        if (data.max_uses && (data.used_count || 0) >= data.max_uses) {
+          setDiscountPercent(0);
+          setCouponMinAmount(null);
+          setCouponMessage({
+            text: "عذراً، وصل هذا الكوبون للحد الأقصى من الاستخدام 🚫",
+            isError: true,
+          });
+          return;
+        }
+
+        // فحص الحد الأدنى للطلب
+        const minOrder = Number(data.min_order_amount) || 0;
+        if (minOrder > 0 && subtotal < minOrder) {
+          setDiscountPercent(0);
+          setCouponMinAmount(minOrder);
+          setCouponMessage({
+            text: `الحد الأدنى لتفعيل هذا الكود هو ${minOrder} ر.س (سلتك الحالية: ${subtotal.toFixed(2)} ر.س)`,
+            isError: true,
+          });
+          return;
+        }
+
+        // تطبيق الكوبون بنجاح
+        setCouponMinAmount(minOrder > 0 ? minOrder : null);
+        setDiscountPercent(Number(data.discount_percent) || 0);
+        setCouponMessage({
+          text: `✨ تم تطبيق خصم ${data.discount_percent}% بنجاح!`,
+          isError: false,
         });
-        return;
+      } catch (err) {
+        console.error("Coupon verification error:", err);
+        setDiscountPercent(0);
+        setCouponMinAmount(null);
+        setCouponMessage({ text: "تعذر التحقق من كود الخصم حالياً", isError: true });
       }
-
-      // إذا تجاوز كل الفحوصات بنجاح
-      setDiscountPercent(data.discount_percent);
-      setCouponMessage({ text: `✨ تم تطبيق خصم ${data.discount_percent}% بنجاح!`, isError: false });
-
-    } catch (err) {
-      setDiscountPercent(0);
-      setCouponMessage({ text: "تعذر التحقق من كود الخصم", isError: true });
-    }
-  };
-
-  const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
-  const discountAmount = subtotal * (discountPercent / 100);
-  const deliveryFee = cart.length > 0 ? 15 : 0;
-  const totalAmount = Math.max(0, subtotal - discountAmount + deliveryFee);
-
-  return (
-    <CartContext.Provider
-      value={{
-        cart,
-        isCartOpen,
-        setIsCartOpen,
-        addToCart,
-        flyingItems,
-        isCartBouncing,
-        updateQuantity,
-        removeFromCart,
-        clearCart,
-        totalItemsCount,
-        subtotal,
-        discountPercent,
-        discountAmount,
-        deliveryFee,
-        totalAmount,
-        couponCode,
-        couponMessage,
-        applyCoupon,
-        removeCoupon,
-      }}
-    >
-      {children}
-    </CartContext.Provider>
+    },
+    [subtotal]
   );
+
+  // دمج القيم وتمريرها بمصفوفة تبعيات دقيقة
+  const contextValue = useMemo(
+    () => ({
+      cart,
+      isCartOpen,
+      setIsCartOpen,
+      addToCart,
+      flyingItems,
+      isCartBouncing,
+      updateQuantity,
+      removeFromCart,
+      clearCart,
+      totalItemsCount,
+      subtotal,
+      discountPercent,
+      discountAmount,
+      deliveryFee,
+      totalAmount,
+      couponCode,
+      couponMessage,
+      applyCoupon,
+      removeCoupon,
+    }),
+    [
+      cart,
+      isCartOpen,
+      addToCart,
+      flyingItems,
+      isCartBouncing,
+      updateQuantity,
+      removeFromCart,
+      clearCart,
+      totalItemsCount,
+      subtotal,
+      discountPercent,
+      discountAmount,
+      deliveryFee,
+      totalAmount,
+      couponCode,
+      couponMessage,
+      applyCoupon,
+      removeCoupon,
+    ]
+  );
+
+  return <CartContext.Provider value={contextValue}>{children}</CartContext.Provider>;
 };
 
 export const useCart = () => {
