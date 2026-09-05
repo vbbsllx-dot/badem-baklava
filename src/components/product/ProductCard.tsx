@@ -99,14 +99,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetail 
           </div>
         )}
 
-        {/* ⚡ مكون الصورة المطور والمدعوم بالكاش السحابي */}
+        {/* ⚡ مكون الصورة المطور - تم تحويله للتحميل الفوري المباشر (eager) لمنع تنبيهات الأداء */}
         <Image
           src={product.image || "/hero-baklava.png"}
           alt={title || "صنف فاخر"}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 300px"
           quality={80}
-          loading="lazy"
+          loading="eager"
           onLoad={() => setImageLoaded(true)}
           className={`object-cover rounded-2xl group-hover:scale-105 transition-all duration-500 ${
             imageLoaded ? "opacity-100 scale-100" : "opacity-0 scale-95"

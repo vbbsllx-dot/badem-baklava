@@ -4,7 +4,6 @@ import React from "react";
 import { Phone, MapPin, Clock } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 
-// شعار إنستغرام مدمج كـ SVG خفيف وسريع بدون أي مكتبات خارجية
 const InstagramIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg
     className={className}
@@ -28,54 +27,52 @@ export const Footer: React.FC = () => {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="w-full bg-[#4A0E17] text-white border-t border-[#C59B27]/30 mt-14 py-6 px-4 hidden md:block shadow-2xl relative z-10">
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-xs">
+    <footer className="w-full bg-[#4A0E17] text-white border-t border-[#C59B27]/30 mt-6 py-5 px-4 mb-14 md:mb-0 shadow-2xl relative z-10">
+      <div className="max-w-6xl mx-auto flex flex-col items-center gap-3 text-xs text-center">
         
-        {/* الجانب الأيمن / الأيسر: شعار العلامة التجارية والموقع */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex flex-col">
-            <span className="font-black text-[#E5C058] font-brand text-sm tracking-[0.2em] uppercase drop-shadow-xs">
-              BADEM BAKLAVA
-            </span>
-            <span className="text-[9px] text-stone-300 font-medium tracking-widest uppercase -mt-0.5">
-              {isAr ? "بقلاوة ملكية فاخرة" : "Royal Turkish Sweets"}
-            </span>
-          </div>
-
-          <span className="text-white/20 hidden sm:inline">|</span>
-
-          <div className="flex items-center gap-3 text-stone-200">
-            <span className="flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-[#E5C058] shrink-0" />
-              <span>
-                {isAr
-                  ? "الرياض - حي المحمدية - شارع التخصصي"
-                  : "Riyadh - Al Mohammadiyah - Tahlia St"}
-              </span>
-            </span>
-
-            <span className="text-white/20 hidden sm:inline">•</span>
-
-            <span className="flex items-center gap-1.5 text-stone-300">
-              <Clock className="w-3.5 h-3.5 text-[#E5C058] shrink-0" />
-              <span>
-                {isAr ? "أوقات العمل: 4 م - 12 ص" : "Hours: 4 PM - 12 AM"}
-              </span>
-            </span>
-          </div>
+        {/* الشعار والعنوان الفاخر */}
+        <div className="flex flex-col items-center space-y-0.5">
+          <span className="font-black text-[#E5C058] font-brand text-sm tracking-[0.25em] uppercase drop-shadow-xs">
+            BADEM BAKLAVA
+          </span>
+          <span className="text-[9px] text-stone-300 font-medium tracking-widest uppercase">
+            {isAr ? "بقلاوة ملكية فاخرة" : "Royal Turkish Sweets"}
+          </span>
         </div>
 
-        {/* الجانب الآخر: روابط التواصل والحسابات */}
-        <div className="flex items-center gap-6 text-stone-200">
+        {/* معلومات الموقع وأوقات العمل */}
+        <div className="flex flex-wrap items-center justify-center gap-2.5 text-stone-300 text-[11px]">
+          <span className="flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5 text-[#E5C058] shrink-0" />
+            <span>
+              {isAr ? "الرياض - حي المحمدية - شارع التخصصي" : "Riyadh - Al Mohammadiyah - Tahlia St"}
+            </span>
+          </span>
+
+          <span className="hidden sm:inline text-white/30">•</span>
+
+          <span className="flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-[#E5C058] shrink-0" />
+            <span>
+              {isAr ? "أوقات العمل: 4 م - 12 ص" : "Hours: 4 PM - 12 AM"}
+            </span>
+          </span>
+        </div>
+
+        {/* فاصل ذهبي ناعم */}
+        <div className="w-20 h-[1px] bg-gradient-to-r from-transparent via-[#C59B27]/40 to-transparent my-0.5" />
+
+        {/* وسائل التواصل والحقوق */}
+        <div className="flex flex-wrap items-center justify-center gap-4 text-stone-200">
           <a
             href="https://instagram.com/badem_sa"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Instagram"
-            className="hover:text-[#E5C058] flex items-center gap-1.5 font-bold transition duration-200 group cursor-pointer"
+            className="hover:text-[#E5C058] flex items-center gap-1.5 font-bold transition duration-200 group cursor-pointer text-[11px]"
           >
-            <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[#E5C058] group-hover:scale-110 transition-transform">
-              <InstagramIcon className="w-3.5 h-3.5" />
+            <div className="w-5 h-5 rounded-lg bg-white/10 flex items-center justify-center text-[#E5C058] group-hover:scale-110 transition-transform">
+              <InstagramIcon className="w-3 h-3" />
             </div>
             <span>@badem_sa</span>
           </a>
@@ -83,20 +80,19 @@ export const Footer: React.FC = () => {
           <a
             href="tel:+966500000000"
             aria-label={isAr ? "اتصل بنا" : "Call us"}
-            className="hover:text-[#E5C058] flex items-center gap-1.5 font-bold transition duration-200 group cursor-pointer"
+            className="hover:text-[#E5C058] flex items-center gap-1.5 font-bold transition duration-200 group cursor-pointer text-[11px]"
           >
-            <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[#E5C058] group-hover:scale-110 transition-transform">
-              <Phone className="w-3.5 h-3.5" />
+            <div className="w-5 h-5 rounded-lg bg-white/10 flex items-center justify-center text-[#E5C058] group-hover:scale-110 transition-transform">
+              <Phone className="w-3 h-3" />
             </div>
             <span>{isAr ? "اتصل بنا" : "Contact Us"}</span>
           </a>
-
-          <span className="text-white/20 hidden sm:inline">|</span>
-
-          <span className="text-[10px] text-stone-400 font-medium">
-            © {currentYear} BADEM. {isAr ? "جميع الحقوق محفوظة" : "All rights reserved"}
-          </span>
         </div>
+
+        {/* حقوق النشر */}
+        <span className="text-[10px] text-stone-400 font-medium tracking-wide">
+          © {currentYear} BADEM. {isAr ? "جميع الحقوق محفوظة" : "All rights reserved"}
+        </span>
 
       </div>
     </footer>

@@ -7,11 +7,13 @@ import {
   ShoppingBag, Layers, RefreshCw, Lock, KeyRound, LogOut, 
   Upload, Volume2, Loader2, Sparkles, Award, Coins, Wand2, 
   Check, ShieldCheck, Calendar, Users, DollarSign, CheckCircle2, Clock, Medal, User, AlertTriangle,
-  PackagePlus
+  PackagePlus,
+  MessageSquare
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/supabase";
 import { OrdersManager } from "./OrdersManager";
 import { BoxBuilderSettings } from "./BoxBuilderSettings";
+import { ReviewsManager } from "./ReviewsManager"; // 👈 أضف هذا الاستيراد في الأعلى
 
 // =========================================================================
 // 🌟 القسم الأول: المحركات الذكية، الترجمة الفورية، والأدوات المساعدة
@@ -123,7 +125,7 @@ export default function AdminDashboard() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"orders" | "categories" | "products" | "banners" | "coupons" | "loyalty" | "box_settings">("orders");
+  const [activeTab, setActiveTab] = useState<"orders" | "categories" | "products" | "banners" | "coupons" | "loyalty" | "box_settings" | "reviews">("orders");
 
   const [categories, setCategories] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -752,7 +754,8 @@ export default function AdminDashboard() {
             { id: "banners", label: `العروض والبانرات (${banners.length})`, icon: ImageIcon },
             { id: "coupons", label: `الكوبونات والأمان 🛡️ (${coupons.length})`, icon: Tag },
             { id: "loyalty", label: `نقاط المكافآت (${loyaltyRewards.length})`, icon: Award },
-            { id: "box_settings", label: "خدمة البوكسات 📦", icon: PackagePlus },
+            { id: "box_settings", label: "خدمة البوكسات ", icon: PackagePlus },
+            { id: "reviews", label: "التعليقات والتقييمات ", icon: MessageSquare }, // 🌟 👈 أضف هذا التبويب الجديد هنا
           ].map((tab) => {
             const Icon = tab.icon;
             return (
@@ -1219,6 +1222,12 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+        {/* تبويب إدارة التعليقات والتقييمات */}
+{activeTab === "reviews" && (
+  <div className="pt-2">
+    <ReviewsManager />
+  </div>
+)}
 
         {/* 4️⃣ تبويب إدارة العروض والبانرات */}
         {activeTab === "banners" && (

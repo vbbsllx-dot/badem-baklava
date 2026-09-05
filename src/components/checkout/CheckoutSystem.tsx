@@ -26,7 +26,7 @@ import { useUser } from "@/context/UserContext";
 import { supabase } from "@/lib/supabase/supabase";
 
 // رقم الواتساب الرسمي للمتجر لاستقبال الطلبات
-const STORE_WHATSAPP_NUMBER = "967770689832";
+const STORE_WHATSAPP_NUMBER = "966592320106";
 
 interface CheckoutSystemProps {
   isOpen: boolean;

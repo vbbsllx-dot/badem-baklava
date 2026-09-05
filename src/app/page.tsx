@@ -104,7 +104,7 @@ export default function Home() {
   }, [productsData, selectedCategory, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-[#F4ECE1] text-[#2D2321] pb-28 md:pb-0 flex flex-col justify-between font-sans">
+    <div className="min-h-screen bg-[#F4ECE1] text-[#2D2321] pb-3 md:pb-0 flex flex-col justify-between font-sans">
       {/* Header Navbar */}
       <Navbar />
 
@@ -129,15 +129,15 @@ export default function Home() {
         {/* Promo Banner */}
         <PromoCarousel />
 
-        {/* ✨ شريط الأقسام ثلاثي الأبعاد الفاخر */}
+ {/* ✨ شريط الأقسام ثلاثي الأبعاد الفاخر */}
         {categories.length > 0 && (
-          <section className="pt-1" id="categories-section">
+          <section className="pt-1" id="categories-section" dir={dir}>
             <div className="w-full bg-[#FAF5ED]/95 backdrop-blur-md rounded-2xl sm:rounded-[2rem] border border-[#EADBCE] shadow-[0_8px_25px_-8px_rgba(74,14,23,0.06)] p-3 sm:p-5">
-              <div className="flex items-center justify-start sm:justify-center gap-5 sm:gap-8 md:gap-10 overflow-x-auto no-scrollbar px-1 py-1">
+              <div className="flex items-center justify-start gap-4 sm:gap-6 overflow-x-auto no-scrollbar px-1 py-1">
                 {/* زر عرض الكل */}
                 <button
                   onClick={() => setSelectedCategory("All")}
-                  className="group flex flex-col items-center justify-between min-w-[64px] sm:min-w-[80px] shrink-0 cursor-pointer transition-all select-none"
+                  className="group flex flex-col items-center justify-between min-w-[72px] sm:min-w-[85px] shrink-0 cursor-pointer transition-all select-none text-center"
                 >
                   <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center">
                     <div className="absolute bottom-1 w-3/4 h-2.5 bg-[#4A0E17]/15 rounded-full blur-[4px] pointer-events-none" />
@@ -152,7 +152,7 @@ export default function Home() {
                     </div>
                   </div>
                   <span
-                    className={`mt-2 text-[11px] sm:text-xs font-serif transition-colors tracking-wide ${
+                    className={`mt-2 text-[11px] sm:text-xs font-serif transition-colors tracking-wide truncate max-w-[80px] ${
                       selectedCategory === "All"
                         ? "text-[#4A0E17] font-black underline decoration-[#C59B27] decoration-2 underline-offset-4"
                         : "text-stone-600 font-bold group-hover:text-[#4A0E17]"
@@ -171,7 +171,7 @@ export default function Home() {
                     <button
                       key={cat.id || cat.slug}
                       onClick={() => setSelectedCategory(isSelected ? "All" : cat.slug)}
-                      className="group flex flex-col items-center justify-between min-w-[68px] sm:min-w-[85px] shrink-0 cursor-pointer transition-all select-none"
+                      className="group flex flex-col items-center justify-between min-w-[72px] sm:min-w-[88px] shrink-0 cursor-pointer transition-all select-none text-center"
                     >
                       <div className="relative w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 flex items-center justify-center">
                         <div className="relative w-full h-full">
@@ -192,11 +192,12 @@ export default function Home() {
                       </div>
 
                       <span
-                        className={`mt-2 text-[11px] sm:text-xs font-serif transition-colors tracking-wide ${
+                        className={`mt-2 text-[11px] sm:text-xs font-serif transition-colors tracking-wide truncate max-w-[85px] ${
                           isSelected
                             ? "text-[#4A0E17] font-black underline decoration-[#C59B27] decoration-2 underline-offset-4"
                             : "text-stone-600 font-bold group-hover:text-[#4A0E17]"
                         }`}
+                        title={catTitle}
                       >
                         {catTitle}
                       </span>

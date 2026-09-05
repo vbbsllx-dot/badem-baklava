@@ -2,13 +2,14 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
-    unoptimized: true, // يمنع سيرفر Next.js من محاولة معالجة الصور ويعتمد على الـ WebP الجاهز من كود الرفع الخاص بك
+    // السماح بنطاق صور سوبابيس الخاص بك لتجنب أخطاء التحميل
     remotePatterns: [
       {
         protocol: "https",
         hostname: "zpvcjdnucykexfnxkxeb.supabase.co",
       },
     ],
+    qualities: [75, 80, 85],
   },
 };
 

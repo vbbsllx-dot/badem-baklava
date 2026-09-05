@@ -28,6 +28,7 @@ interface IngredientModalProps {
 interface ReviewItem {
   id: string;
   customer_name: string;
+  customer_phone?: string;
   rating: number;
   comment: string;
   created_at: string;
@@ -38,7 +39,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   const isAr = language === "ar";
   const { addToCart, setIsCartOpen } = useCart();
   const { showToast } = useToast();
-  const { userName } = useUser();
+  const { userName, userPhone } = useUser();
   const reviewInputId = useId();
 
   const [multiplier, setMultiplier] = useState(1);
@@ -142,23 +143,55 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     setIsCartOpen(true);
   };
 
+  // 🛡️ إرسال التقييم مع اشتراط البيانات والحد الأقصى (تعليقين فقط لكل عميل لكل صنف)
   const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !product?.id) return;
 
-    const finalName =
-      reviewerName.trim() ||
-      userName.trim() ||
-      (isAr ? "عميل بادَم المميز" : "Valued Customer");
+    const finalName = reviewerName.trim() || userName.trim();
+    const finalPhone = userPhone?.trim() || "";
+
+    // التحقق من توفر الاسم ورقم الهاتف من ملف العميل الشخصي
+    if (!finalName || !finalPhone) {
+      showToast(
+        isAr
+          ? "يرجى تسجيل اسمك ورقم هاتفك (من ملفك الشخصي) للمشاركة بالتقييم"
+          : "Please update your profile name and phone first",
+        "error"
+      );
+      return;
+    }
 
     setSubmittingReview(true);
     try {
+      // التحقق من عدد التعليقات السابقة لهذا العميل على هذا المنتج تحديداً
+      const { data: existingReviews, error: countError } = await supabase
+        .from("reviews")
+        .select("id")
+        .eq("product_id", product.id)
+        .eq("customer_phone", finalPhone);
+
+      if (countError) throw countError;
+
+      if (existingReviews && existingReviews.length >= 2) {
+        showToast(
+          isAr
+            ? "عذراً، لقد وصلت الحد الأقصى المسموح (تعليقين اثنين) لهذا المنتج."
+            : "Sorry, you have reached the maximum limit of 2 reviews for this product.",
+          "error"
+        );
+        setSubmittingReview(false);
+        return;
+      }
+
+      // إرسال التعليق الآمن بعد اجتياز الشروط
       const { data, error } = await supabase
         .from("reviews")
         .insert([
           {
             product_id: product.id,
             customer_name: finalName,
+            customer_phone: finalPhone,
             rating: userRating,
             comment: newComment.trim(),
           },
@@ -189,7 +222,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200 select-none"
       role="dialog"
       aria-modal="true"
       aria-label={isAr ? productTitleAr : productTitleEn}
@@ -320,82 +353,113 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             </div>
           </div>
 
-          {/* 4. تجارب وتقييمات العملاء */}
-          <div className="bg-white rounded-3xl p-4 border border-stone-200/90 space-y-4 shadow-2xs">
-            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-[#4A0E17]" />
-                <h4 className="text-xs font-black text-stone-900">
-                  {isAr ? "تقييمات وتجارب العملاء" : "Customer Reviews"}
-                </h4>
+          {/* 4. تجارب وتقييمات العملاء - تصميم ملكي فاخر ومطور */}
+          <div className="bg-white rounded-3xl p-5 border border-stone-200/90 space-y-5 shadow-2xs">
+            
+            {/* رأس قسم التقييمات والإحصائيات */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-stone-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4 text-[#C59B27]" />
+                  </div>
+                  <h4 className="text-xs font-black text-stone-900">
+                    {isAr ? "تقييمات وتجارب العملاء الملكية" : "Royal Customer Reviews"}
+                  </h4>
+                </div>
+                <p className="text-[10px] text-stone-400 mt-0.5">
+                  {isAr ? "آراء حقيقية من عملائنا الذواقين" : "Genuine feedback from our valued connoisseurs"}
+                </p>
               </div>
-              <div className="flex items-center gap-1">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <Star key={s} className="w-3.5 h-3.5 text-[#E5C058] fill-[#E5C058]" />
-                ))}
-                <span className="text-xs font-bold text-stone-700 mr-1 rtl:mr-1 ltr:ml-1">
-                  {averageRating} / 5
+
+              <div className="flex items-center gap-2 bg-[#FAF5ED] px-3.5 py-2 rounded-2xl border border-stone-200/60">
+                <div className="flex items-center text-amber-500 gap-0.5">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star key={s} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                  ))}
+                </div>
+                <span className="text-xs font-black text-[#4A0E17] font-mono">
+                  {averageRating} <span className="text-[10px] font-normal text-stone-400">/ 5.0</span>
                 </span>
               </div>
             </div>
 
+            {/* قائمة عرض التقييمات */}
             {loadingReviews ? (
-              <div className="py-6 flex flex-col items-center justify-center gap-2 text-stone-400">
+              <div className="py-8 flex flex-col items-center justify-center gap-2 text-stone-400">
                 <Loader2 className="w-5 h-5 animate-spin text-[#4A0E17]" />
                 <span className="text-[11px] font-bold">
-                  {isAr ? "جاري تحميل آراء العملاء..." : "Loading reviews..."}
+                  {isAr ? "جاري تحميل آراء الذواقين..." : "Loading reviews..."}
                 </span>
               </div>
             ) : reviewsList.length === 0 ? (
-              <div className="text-center py-6 text-stone-400 space-y-1">
-                <p className="text-xs font-bold text-stone-600">
-                  {isAr ? "كن أول من يشاركنا رأيه وتجربته لهذا الصنف الفاخر!" : "Be the first to review this royal sweet!"}
+              <div className="text-center py-8 bg-[#FAF5ED]/40 rounded-2xl border border-dashed border-stone-200 space-y-1.5">
+                <Star className="w-8 h-8 mx-auto text-[#C59B27]/50 stroke-1" />
+                <p className="text-xs font-bold text-stone-700">
+                  {isAr ? "كن أول من يقيم هذا الصنف الملكي!" : "Be the first to review this royal item!"}
+                </p>
+                <p className="text-[10px] text-stone-400">
+                  {isAr ? "شاركنا انطباعك بعد التذوق أدناه." : "Share your experience below."}
                 </p>
               </div>
             ) : (
-              <div className="space-y-2.5 max-h-48 overflow-y-auto no-scrollbar overscroll-contain">
+              <div className="space-y-3 max-h-56 overflow-y-auto no-scrollbar overscroll-contain pr-1">
                 {reviewsList.map((rev) => (
-                  <div key={rev.id} className="bg-[#FAF5ED]/70 p-3 rounded-2xl border border-stone-100 space-y-1">
+                  <div 
+                    key={rev.id} 
+                    className="bg-[#FAF5ED]/60 p-3.5 rounded-2xl border border-stone-200/80 space-y-2 transition hover:bg-[#FAF5ED]"
+                  >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-stone-800">{rev.customer_name}</span>
-                        <span title={isAr ? "مشتري مؤكد" : "Verified Buyer"} className="inline-flex items-center">
-  <CheckCircle className="w-3 h-3 text-emerald-600" />
-</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-[#4A0E17] text-[#E5C058] flex items-center justify-center font-black text-[10px]">
+                          {(rev.customer_name || "ع")[0]}
+                        </div>
+                        <span className="text-xs font-black text-stone-800">{rev.customer_name}</span>
+                        <span 
+                          title={isAr ? "مشتري مؤكد" : "Verified Buyer"} 
+                          className="inline-flex items-center gap-0.5 text-[9px] bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200/60"
+                        >
+                          <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
+                          <span>{isAr ? "مشتري مؤكد" : "Verified"}</span>
+                        </span>
                       </div>
-                      <span className="text-[10px] text-stone-400">
-                        {new Date(rev.created_at).toLocaleDateString(isAr ? "ar-SA" : "en-US")}
+                      <span className="text-[10px] text-stone-400 font-mono">
+                        {rev.created_at ? new Date(rev.created_at).toLocaleDateString(isAr ? "ar-SA" : "en-US") : ""}
                       </span>
                     </div>
+
                     <div className="flex gap-0.5">
                       {[...Array(Number(rev.rating) || 5)].map((_, i) => (
-                        <Star key={i} className="w-2.5 h-2.5 text-[#E5C058] fill-[#E5C058]" />
+                        <Star key={i} className="w-3 h-3 text-amber-400 fill-amber-400" />
                       ))}
                     </div>
-                    <p className="text-[11px] text-stone-600 leading-relaxed">{rev.comment}</p>
+
+                    <p className="text-xs text-stone-700 leading-relaxed bg-white/80 p-2.5 rounded-xl border border-stone-100 font-medium">
+                      {rev.comment}
+                    </p>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* نموذج إرسال التقييم */}
-            <form onSubmit={handleAddReview} className="space-y-2 pt-2 border-t border-stone-100">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-stone-700">
-                  {isAr ? "أضف تقييمك وتجربتك:" : "Add your rating:"}
+            {/* نموذج إضافة تقييم جديد */}
+            <form onSubmit={handleAddReview} className="space-y-3 pt-3 border-t border-stone-100">
+              <div className="flex items-center justify-between bg-[#FAF5ED] p-3 rounded-2xl border border-stone-200/60">
+                <span className="text-xs font-black text-[#4A0E17]">
+                  {isAr ? "تقييمك الشخصي للصنف:" : "Your personal rating:"}
                 </span>
-                <div className="flex gap-1" role="radiogroup" aria-label="Rating">
+                <div className="flex gap-1.5" role="radiogroup" aria-label="Rating">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
                       type="button"
                       onClick={() => setUserRating(star)}
                       aria-label={`${star} Stars`}
-                      className="p-0.5 cursor-pointer hover:scale-110 active:scale-95 transition-transform"
+                      className="p-1 cursor-pointer hover:scale-125 active:scale-95 transition-transform"
                     >
                       <Star
-                        className={`w-4 h-4 transition-colors ${
-                          star <= userRating ? "text-[#E5C058] fill-[#E5C058]" : "text-stone-300"
+                        className={`w-5 h-5 transition-colors ${
+                          star <= userRating ? "text-amber-400 fill-amber-400 drop-shadow-xs" : "text-stone-300"
                         }`}
                       />
                     </button>
@@ -409,7 +473,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                   value={reviewerName}
                   onChange={(e) => setReviewerName(e.target.value)}
                   placeholder={isAr ? "اسمك الكريم (اختياري)..." : "Your name (optional)..."}
-                  className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17] font-medium"
+                  className="w-full bg-[#FAF5ED] border border-stone-200 rounded-2xl px-3.5 py-2.5 text-xs focus:outline-hidden focus:border-[#4A0E17] font-bold"
                 />
               )}
 
@@ -420,20 +484,20 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                   required
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
-                  placeholder={isAr ? "اكتب رأيك وتجربتك هنا..." : "Write your review here..."}
-                  className="flex-1 bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17]"
+                  placeholder={isAr ? "اكتب انطباعك وتجربتك بالتذوق..." : "Write your tasting review here..."}
+                  className="flex-1 bg-[#FAF5ED] border border-stone-200 rounded-2xl px-4 py-2.5 text-xs focus:outline-hidden focus:border-[#4A0E17] font-medium"
                 />
                 <button
                   type="submit"
                   disabled={submittingReview || !newComment.trim()}
-                  className="bg-[#4A0E17] hover:bg-[#36070E] text-white px-4 py-2 rounded-xl text-xs font-bold transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shrink-0"
+                  className="bg-[#4A0E17] hover:bg-[#36070E] active:scale-95 text-white px-5 py-2.5 rounded-2xl text-xs font-black transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-md shrink-0"
                 >
                   {submittingReview ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin text-[#C59B27]" />
                   ) : (
-                    <Send className="w-3.5 h-3.5" />
+                    <Send className="w-4 h-4 text-[#C59B27]" />
                   )}
-                  <span>{submittingReview ? (isAr ? "جاري..." : "Posting...") : isAr ? "نشر" : "Post"}</span>
+                  <span>{submittingReview ? (isAr ? "جاري..." : "Posting...") : isAr ? "نشر التقييم" : "Post Review"}</span>
                 </button>
               </div>
             </form>
