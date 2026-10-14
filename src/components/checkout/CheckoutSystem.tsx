@@ -36,17 +36,57 @@ interface CheckoutSystemProps {
 type Step = "details" | "payment" | "tracking";
 type PaymentMethod = "applepay" | "mada" | "card" | "cod";
 
+interface CheckoutCartItem {
+  id?: string | number;
+  type?: string;
+  tierId?: string;
+  title: string;
+  price: number | string;
+  quantity: number;
+  portion?: string;
+  portionNote?: string;
+  summaryText?: string;
+  items?: Array<{ quantity?: number; unitPrice?: number }>;
+  [key: string]: unknown;
+}
+
+interface VerifiedOrderItem {
+  title: string;
+  portion: string;
+  portionNote?: string;
+  quantity: number;
+  price: number;
+  is_custom_box?: boolean;
+}
+
+interface CartContextExtended {
+  cart?: CheckoutCartItem[];
+  totalAmount?: number;
+  clearCart: () => void;
+  setIsCartOpen: (open: boolean) => void;
+  appliedCoupon?: string;
+  couponCode?: string;
+  coupon?: string;
+  discountAmount?: number;
+  deliveryFee?: number;
+  subtotal?: number;
+  removeCoupon?: () => void;
+}
+
 export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose }) => {
   const { language, dir } = useLanguage();
   const isAr = language === "ar";
   const detailsFormId = useId();
 
-  // استدعاء بيانات السلة
-  const cartContext = useCart() as any;
+  // استدعاء بيانات السلة بأمان
+  const cartContext = useCart() as unknown as CartContextExtended;
   const { cart = [], totalAmount = 0, clearCart, setIsCartOpen } = cartContext;
   const appliedCouponCode = cartContext.appliedCoupon || cartContext.couponCode || cartContext.coupon || "";
   const discountAmount = Number(cartContext.discountAmount) || 0;
-  const deliveryFee = Number(cartContext.deliveryFee ?? 15);
+  const deliveryFee =
+    cartContext.deliveryFee !== undefined && cartContext.deliveryFee !== null
+      ? Number(cartContext.deliveryFee)
+      : 15;
   const subtotal = Number(cartContext.subtotal) || Math.max(0, totalAmount - deliveryFee + discountAmount);
 
   // استدعاء بيانات المستخدم
@@ -81,12 +121,6 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   const [backupWhatsAppUrl, setBackupWhatsAppUrl] = useState<string | null>(null);
   const etaMinutes = 35;
 
-  // مزامنة بيانات المستخدم المسجلة تلقائياً
-  useEffect(() => {
-    if (userName && !customerName) setCustomerName(userName);
-    if (userPhone && !phone) setPhone(userPhone);
-  }, [userName, userPhone]);
-
   // محاكاة مراحل تحضير الطلب في شاشة التتبع
   useEffect(() => {
     if (currentStep === "tracking") {
@@ -98,6 +132,10 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
   }, [currentStep]);
 
   if (!isOpen) return null;
+
+  // قيم العرض الذكية لتفادي Cascading Renders
+  const effectiveCustomerName = customerName || userName || "";
+  const effectivePhone = phone || userPhone || "";
 
   // 📍 تحديد الموقع الجغرافي التفاعلي بالـ GPS
   const handleGetLocation = () => {
@@ -192,7 +230,7 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
         if (!orderErr && previousOrders) {
           const hasUsedBefore = previousOrders.some(
-            (ord: any) => ord.notes && ord.notes.includes(appliedCouponCode)
+            (ord: { notes?: string }) => ord.notes && ord.notes.includes(appliedCouponCode)
           );
 
           if (hasUsedBefore) {
@@ -216,15 +254,20 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
   const handleProceedToPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim() || !phone.trim() || !district.trim()) {
+    const finalName = effectiveCustomerName.trim();
+    const finalPhone = effectivePhone.trim();
+
+    if (!finalName || !finalPhone || !district.trim()) {
       alert(isAr ? "يرجى تعبئة كافة الحقول المطلوبة." : "Please fill in all required fields.");
       return;
     }
 
-    setUserName(customerName.trim());
-    setUserPhone(phone.trim());
+    setCustomerName(finalName);
+    setPhone(finalPhone);
+    setUserName(finalName);
+    setUserPhone(finalPhone);
 
-    const isValid = await validateCouponSecurity(phone.trim());
+    const isValid = await validateCouponSecurity(finalPhone);
 
     if (!isValid) {
       const rejectionReason = couponWarning || (isAr ? "كود الخصم غير صالح أو لم يعد مستوفياً للشروط." : "Coupon is invalid.");
@@ -249,14 +292,21 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
     setCurrentStep("payment");
   };
 
-  // 📲 بناء رابط الواتساب بدقة متناهية
-  const createWhatsAppUrl = (generatedId: string, finalTotal: number, itemsToPrint: any[]) => {
+  // 📲 بناء رابط الواتساب بدقة متناهية ومطابقة للفاتورة الموثقة
+  const createWhatsAppUrl = (
+    generatedId: string,
+    verifiedSub: number,
+    verifiedDisc: number,
+    verifiedDeliv: number,
+    finalTotal: number,
+    itemsToPrint: VerifiedOrderItem[]
+  ) => {
     const cleanPhone = STORE_WHATSAPP_NUMBER.replace(/[^0-9]/g, "");
 
     const itemsText = itemsToPrint
       .map(
-        (item: any, idx: number) =>
-          `  ${idx + 1}. *${item.title}*\n     ${item.portion ? `• ${item.portion}\n     ` : ""}العدد: ${item.quantity} | السعر: ${(Number(item.price) * item.quantity).toFixed(2)} ر.س`
+        (item, idx) =>
+          `  ${idx + 1}. *${item.title}*\n     ${item.portion ? `• الحجم: ${item.portion}\n     ` : ""}الكمية: ${item.quantity} | السعر: ${(Number(item.price) * item.quantity).toFixed(2)} ر.س`
       )
       .join("\n");
 
@@ -266,7 +316,10 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
     const locationLinkText = mapsLink ? `\n📍 *موقع الخريطة (GPS للمندوب):*\n${mapsLink}\n` : "";
     const notesText = notes ? `\n📝 *ملاحظات خاصة:* ${notes}\n` : "";
-    const couponText = appliedCouponCode ? `\n🏷️ *الكود المطبق:* ${appliedCouponCode}\n` : "";
+    const couponText =
+      appliedCouponCode && verifiedDisc > 0
+        ? `\n🏷️ *الخصم المطبق (${appliedCouponCode}):* -${verifiedDisc.toFixed(2)} ر.س`
+        : "";
 
     const payMethodTitle =
       paymentMethod === "applepay"
@@ -279,66 +332,171 @@ export const CheckoutSystem: React.FC<CheckoutSystemProps> = ({ isOpen, onClose 
 
     const message = `✨ *طلب جديد من متجر بادَم BADEM BAKLAVA*
 ━━━━━━━━━━━━━━━━━━━
-🆔 *رقم الطلب:* ${generatedId}
+🆔 *رقم الطلب:* #${generatedId}
 
 👤 *بيانات المستلم والتوصيل:*
-• *الاسم:* ${customerName}
-• *الجوال:* ${phone}
+• *الاسم:* ${effectiveCustomerName}
+• *الجوال:* ${effectivePhone}
 • *المدينة:* ${city}
 • *الحي:* ${district}
-• *الشارع / التفاصيل:* ${street || "غير محدد"}${locationLinkText}${giftText}${notesText}${couponText}
-🛍️ *تفاصيل الطلب:*
+• *الشارع / التفاصيل:* ${street || "غير محدد"}${locationLinkText}${giftText}${notesText}
+🛍️ *تفاصيل الأصناف والفاتورة:*
 ${itemsText}
-
+━━━━━━━━━━━━━━━━━━━
+📦 *قيمة المنتجات:* ${verifiedSub.toFixed(2)} ر.س
+🚚 *رسوم التوصيل:* ${verifiedDeliv.toFixed(2)} ر.س${couponText}
+💰 *المبلغ الصافي المطلوب:* *${finalTotal.toFixed(2)} ر.س*
 ━━━━━━━━━━━━━━━━━━━
 💳 *طريقة الدفع:* ${payMethodTitle}
-💰 *المبلغ الإجمالي:* *${finalTotal.toFixed(2)} ر.س*
 ━━━━━━━━━━━━━━━━━━━
-✨ أتطلع لتأكيد طلبي وتجهيزه طازجاً!`;
+✨ أرجو تأكيد الطلب وتجهيزه طازجاً!`;
 
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
   };
 
-  // ✅ تأكيد الطلب والتحقق الصارم مع الحماية من مانع النوافذ المنبثقة
+  // 🎯 دالة استخراج السعر الصحيح للوزن المختار من بيانات المنتج في قاعدة البيانات
+  const resolveOfficialProductPrice = (
+    dbProduct: Record<string, unknown> | null,
+    cartItem: CheckoutCartItem
+  ): number => {
+    const cartPrice = Number(cartItem.price) || 0;
+    if (!dbProduct) return cartPrice;
+
+    const portionText = String(cartItem.portion || cartItem.portionNote || "").toLowerCase();
+    const basePrice = Number(dbProduct.base_price || dbProduct.price || 0);
+
+    // 1. فحص إذا كان المنتج يحتوي على مصفوفة أوزان مخصصة
+    const variantsList =
+      (dbProduct.weights as Array<Record<string, unknown>>) ||
+      (dbProduct.portions as Array<Record<string, unknown>>) ||
+      (dbProduct.sizes as Array<Record<string, unknown>>) ||
+      (dbProduct.variants as Array<Record<string, unknown>>);
+
+    if (Array.isArray(variantsList) && variantsList.length > 0) {
+      const matchedVariant = variantsList.find((v) => {
+        const vName = String(v.name_ar || v.title_ar || v.name || v.label || v.weight || "").toLowerCase();
+        return vName && (portionText.includes(vName) || vName.includes(portionText));
+      });
+      if (matchedVariant && Number(matchedVariant.price) > 0) {
+        return Number(matchedVariant.price);
+      }
+    }
+
+    // 2. فحص حالة اختيار 1 كيلو (1000g / 1Kg)
+    if (
+      (/1000|1\s*kg|كيلو/i.test(portionText)) &&
+      !(/نصف|نص|ربع|500|250/i.test(portionText))
+    ) {
+      const dbKiloPrice = Number(
+        dbProduct.price_1kg ||
+          dbProduct.price_1000g ||
+          dbProduct.kilo_price ||
+          dbProduct.price_kilo ||
+          dbProduct.one_kilo_price ||
+          0
+      );
+      if (dbKiloPrice > 0) return dbKiloPrice;
+      if (cartPrice > 0) return cartPrice;
+      return basePrice * 4;
+    }
+
+    // 3. فحص حالة اختيار نصف كيلو (500g)
+    if (/500|نصف|نص/i.test(portionText)) {
+      const dbHalfPrice = Number(
+        dbProduct.price_500g ||
+          dbProduct.price_half ||
+          dbProduct.half_kilo_price ||
+          dbProduct.half_price ||
+          dbProduct.price_half_kilo ||
+          0
+      );
+      if (dbHalfPrice > 0) return dbHalfPrice;
+      if (cartPrice > 0) return cartPrice;
+      return basePrice * 2;
+    }
+
+    // 4. فحص حالة اختيار ربع كيلو (250g)
+    if (/250|ربع/i.test(portionText)) {
+      const dbQuarterPrice = Number(
+        dbProduct.price_250g ||
+          dbProduct.price_quarter ||
+          dbProduct.quarter_kilo_price ||
+          dbProduct.quarter_price ||
+          basePrice ||
+          0
+      );
+      if (dbQuarterPrice > 0) return dbQuarterPrice;
+      return cartPrice;
+    }
+
+    return cartPrice > 0 ? cartPrice : basePrice;
+  };
+
+  // ✅ تأكيد الطلب والتحقق الصارم مع دعم المدى المرن للبوكسات وأسعار الأوزان
   const handleConfirmOrder = async () => {
     if (cart.length === 0) return;
     setIsProcessing(true);
 
     let verifiedSubtotal = 0;
-    const verifiedItems: any[] = [];
+    const verifiedItems: VerifiedOrderItem[] = [];
 
     try {
+      const { data: boxSettingsData } = await supabase
+        .from("box_builder_settings")
+        .select("pricing_mode, packaging_fee")
+        .eq("id", "default")
+        .maybeSingle();
+
+      const isDynamicBoxPricing = (boxSettingsData?.pricing_mode || "dynamic") === "dynamic";
+      const boxPackagingFee = Number(boxSettingsData?.packaging_fee) || 0;
+
       for (const cartItem of cart) {
-        // 🔒 1. فحص البوكس المخصص
+        // 🔒 1. فحص البوكس المخصص (مع دعم المدى المرن للقطع مثل 6 - 8 قطع)
         if (cartItem.type === "custom_box" || cartItem.tierId) {
-          let officialBoxPrice = Number(cartItem.price);
-          let officialCapacity = 0;
+          let officialBoxPrice = Number(cartItem.price) || 0;
+          let maxCapacity = 0;
+          let minCapacity = 0;
 
           const { data: tierData } = await supabase
             .from("custom_box_tiers")
-            .select("price, capacity, name_ar")
+            .select("price, capacity, name_ar, subtitle_ar")
             .eq("id", cartItem.tierId)
             .maybeSingle();
 
           if (tierData) {
-            officialBoxPrice = Number(tierData.price);
-            officialCapacity = Number(tierData.capacity);
-          } else {
-            const fallbackTiers: Record<string, { price: number; capacity: number }> = {
-              box_500g: { price: 45, capacity: 4 },
-              box_1000g: { price: 85, capacity: 8 },
-              box_1500g: { price: 125, capacity: 12 },
-            };
-            if (fallbackTiers[cartItem.tierId]) {
-              officialBoxPrice = fallbackTiers[cartItem.tierId].price;
-              officialCapacity = fallbackTiers[cartItem.tierId].capacity;
+            maxCapacity = Number(tierData.capacity) || 0;
+            minCapacity = maxCapacity;
+
+            // استخراج الحد الأدنى إذا كانت الملاحظة تحتوي على مدى مثل "6 - 8 قطعة"
+            const sub = String(tierData.subtitle_ar || "");
+            const rangeMatch = sub.match(/(\d+)\s*[-–—إلى]+\s*(\d+)/);
+            if (rangeMatch && rangeMatch.length >= 3) {
+              const first = parseInt(rangeMatch[1], 10);
+              const second = parseInt(rangeMatch[2], 10);
+              minCapacity = Math.min(first, second);
+            }
+
+            if (!isDynamicBoxPricing) {
+              officialBoxPrice = Number(tierData.price);
             }
           }
 
-          if (Array.isArray(cartItem.items) && officialCapacity > 0) {
-            const totalPieces = cartItem.items.reduce((sum: number, it: any) => sum + Number(it.quantity || 0), 0);
-            if (totalPieces !== officialCapacity) {
-              throw new Error(`سعة البوكس غير مكتملة (${totalPieces} من أصل ${officialCapacity} قطع).`);
+          if (Array.isArray(cartItem.items)) {
+            const totalPieces = cartItem.items.reduce((sum, it) => sum + Number(it.quantity || 0), 0);
+            if (maxCapacity > 0 && (totalPieces < minCapacity || totalPieces > maxCapacity)) {
+              throw new Error(
+                `سعة البوكس غير مكتملة (${totalPieces} قطع، والمطلوب بين ${minCapacity} إلى ${maxCapacity} قطع).`
+              );
+            }
+
+            if (isDynamicBoxPricing) {
+              const calculatedDynamic = cartItem.items.reduce(
+                (sum, it) => sum + Number(it.unitPrice || 0) * Number(it.quantity || 0),
+                0
+              );
+              if (calculatedDynamic > 0) {
+                officialBoxPrice = calculatedDynamic + boxPackagingFee;
+              }
             }
           }
 
@@ -346,29 +504,34 @@ ${itemsText}
           verifiedSubtotal += boxItemTotal;
           verifiedItems.push({
             title: cartItem.title,
-            portion: cartItem.portion || cartItem.summaryText || "تشكيلة مخصصة",
-            portionNote: cartItem.portionNote || `بوكس مخصص (${officialCapacity} قطع)`,
+            portion: cartItem.portion || cartItem.summaryText || "تشكيلة مخصصة بالميزان",
+            portionNote: cartItem.portionNote || `بوكس مخصص (${minCapacity}-${maxCapacity} قطع)`,
             quantity: Number(cartItem.quantity || 1),
             price: officialBoxPrice,
             is_custom_box: true,
           });
         }
-        // 🔒 2. فحص المنتجات العادية
+        // 🔒 2. فحص المنتجات العادية مع احترام الوزن المختار (ربع / نصف / كيلو)
         else {
           const { data: dbProduct } = await supabase
             .from("products")
-            .select("base_price, title_ar")
+            .select("*")
             .eq("title_ar", cartItem.title)
             .maybeSingle();
 
-          const officialPrice = dbProduct ? Number(dbProduct.base_price) : Number(cartItem.price);
-          const itemTotal = officialPrice * Number(cartItem.quantity);
+          const officialPrice = resolveOfficialProductPrice(
+            dbProduct as Record<string, unknown> | null,
+            cartItem
+          );
+          const qty = Number(cartItem.quantity) || 1;
+          const itemTotal = officialPrice * qty;
 
           verifiedSubtotal += itemTotal;
           verifiedItems.push({
             title: cartItem.title,
-            portion: cartItem.portionNote || cartItem.portion || "افتراضي",
-            quantity: cartItem.quantity,
+            portion: cartItem.portion || cartItem.portionNote || "الوزن المختار",
+            portionNote: cartItem.portionNote || cartItem.portion || "الوزن المختار",
+            quantity: qty,
             price: officialPrice,
           });
         }
@@ -388,7 +551,7 @@ ${itemsText}
         }
       }
 
-      const verifiedDeliveryFee = Number(deliveryFee) || 15;
+      const verifiedDeliveryFee = deliveryFee;
       const verifiedTotalAmount = Math.max(0, verifiedSubtotal - verifiedDiscount + verifiedDeliveryFee);
       const generatedId = `BDM-${Math.floor(100000 + Math.random() * 900000)}`;
 
@@ -400,10 +563,13 @@ ${itemsText}
         .filter(Boolean)
         .join(" | ");
 
+      const finalCustomerName = effectiveCustomerName.trim();
+      const finalCustomerPhone = effectivePhone.trim();
+
       const orderPayload = {
         id: generatedId,
-        customer_name: customerName.trim(),
-        customer_phone: phone.trim(),
+        customer_name: finalCustomerName,
+        customer_phone: finalCustomerPhone,
         city: city.trim(),
         district: district.trim(),
         street: street.trim(),
@@ -445,7 +611,9 @@ ${itemsText}
 
         try {
           const localCoupons = JSON.parse(localStorage.getItem("badem_saved_coupons") || "[]");
-          const filtered = localCoupons.filter((c: any) => c.code !== appliedCouponCode);
+          const filtered = Array.isArray(localCoupons)
+            ? localCoupons.filter((c: { code?: string }) => c.code !== appliedCouponCode)
+            : [];
           localStorage.setItem("badem_saved_coupons", JSON.stringify(filtered));
         } catch {
           // تجاوز أخطاء التخزين المحلي الصامتة
@@ -454,8 +622,15 @@ ${itemsText}
 
       setOrderId(generatedId);
 
-      // إنشاء رابط الواتساب وفتحه مع حفظه كنسخة احتياطية في حال حجبه مانع النوافذ
-      const waUrl = createWhatsAppUrl(generatedId, verifiedTotalAmount, verifiedItems);
+      // إنشاء رابط الواتساب متطابقاً 100% مع الأسعار الموثقة
+      const waUrl = createWhatsAppUrl(
+        generatedId,
+        verifiedSubtotal,
+        verifiedDiscount,
+        verifiedDeliveryFee,
+        verifiedTotalAmount,
+        verifiedItems
+      );
       setBackupWhatsAppUrl(waUrl);
 
       const win = window.open(waUrl, "_blank");
@@ -466,11 +641,11 @@ ${itemsText}
       setCurrentStep("tracking");
 
       if (addOrder) {
-        addOrder({
+        await addOrder({
           id: generatedId,
-          customerName: customerName.trim(),
-          phone: phone.trim(),
-          items: verifiedItems,
+          customerName: finalCustomerName,
+          phone: finalCustomerPhone,
+          items: verifiedItems as unknown as Record<string, unknown>[],
           totalAmount: verifiedTotalAmount,
           status: "pending",
           paymentMethod: paymentMethod,
@@ -478,9 +653,15 @@ ${itemsText}
       }
 
       clearCart();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Secure order processing error:", err);
-      alert(err.message || (isAr ? "حدث خطأ أثناء معالجة الطلب، يرجى المحاولة مرة أخرى." : "Error processing order, please try again."));
+      const message =
+        err instanceof Error
+          ? err.message
+          : isAr
+          ? "حدث خطأ أثناء معالجة الطلب، يرجى المحاولة مرة أخرى."
+          : "Error processing order, please try again.";
+      alert(message);
     } finally {
       setIsProcessing(false);
     }
@@ -495,7 +676,7 @@ ${itemsText}
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex justify-center items-end sm:items-center p-0 sm:p-4 animate-in fade-in duration-200">
       <div className="bg-[#FAF5ED] w-full max-w-2xl rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl border border-[#4A0E17]/20 max-h-[92vh] flex flex-col relative text-[#2D2321]">
-        
+
         {/* الترويسة الفاخرة */}
         <div className="bg-[#4A0E17] text-white p-4 sm:p-5 flex items-center justify-between border-b border-[#C59B27]/30">
           <div className="flex items-center gap-2.5">
@@ -515,6 +696,7 @@ ${itemsText}
           </div>
 
           <button
+            type="button"
             onClick={currentStep === "tracking" ? handleFinishClose : onClose}
             className="w-8 h-8 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center transition cursor-pointer"
             aria-label="Close modal"
@@ -546,11 +728,11 @@ ${itemsText}
 
         {/* محتوى الشاشة */}
         <div className="overflow-y-auto no-scrollbar p-4 sm:p-6 space-y-5 flex-1 overscroll-contain">
-          
+
           {/* الخطوة 1: العنوان والتفاصيل */}
           {currentStep === "details" && (
             <form id={detailsFormId} onSubmit={handleProceedToPayment} className="space-y-4">
-              
+
               {couponWarning && (
                 <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-rose-800 animate-in fade-in duration-200">
                   <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -603,7 +785,7 @@ ${itemsText}
                     <input
                       type="text"
                       required
-                      value={customerName}
+                      value={effectiveCustomerName}
                       onChange={(e) => { setCustomerName(e.target.value); setCouponWarning(null); }}
                       placeholder="مثال: محمد العتيبي"
                       className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17] font-bold"
@@ -617,7 +799,7 @@ ${itemsText}
                     <input
                       type="tel"
                       required
-                      value={phone}
+                      value={effectivePhone}
                       onChange={(e) => { setPhone(e.target.value); setCouponWarning(null); }}
                       placeholder="05XXXXXXXX"
                       className="w-full bg-[#FAF5ED] border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-hidden focus:border-[#4A0E17] font-bold"
@@ -751,10 +933,12 @@ ${itemsText}
                   <span>{isAr ? "ملخص المنتجات:" : "Cart Summary:"}</span>
                   <span className="text-[#4A0E17]">{cart.length} أصناف</span>
                 </div>
-                {cart.map((item: any, i: number) => (
+                {cart.map((item, i) => (
                   <div key={i} className="flex justify-between text-stone-600">
-                    <span className="truncate max-w-[200px]">{item.title} ({item.portion || item.portionNote || "افتراضي"})</span>
-                    <span className="font-bold">{(Number(item.price) * item.quantity).toFixed(2)} ر.س</span>
+                    <span className="truncate max-w-[200px]">
+                      {item.title} ({item.portion || item.portionNote || "افتراضي"})
+                    </span>
+                    <span className="font-bold">{(Number(item.price) * Number(item.quantity)).toFixed(2)} ر.س</span>
                   </div>
                 ))}
 
@@ -865,11 +1049,10 @@ ${itemsText}
                 </h4>
                 <p className="text-xs text-emerald-700">
                   {isAr
-                    ? `شكراً ${customerName}، تم توثيق الفاتورة برقم (${orderId}) وجاري تحضير طلبك بعناية.`
-                    : `Thank you ${customerName}, your order (${orderId}) is now registered.`}
+                    ? `شكراً ${effectiveCustomerName}، تم توثيق الفاتورة برقم (${orderId}) وجاري تحضير طلبك بعناية.`
+                    : `Thank you ${effectiveCustomerName}, your order (${orderId}) is now registered.`}
                 </p>
 
-                {/* زر احتياطي في حال منع المتصفح فتح الواتساب تلقائياً */}
                 {backupWhatsAppUrl && (
                   <div className="pt-2">
                     <a
@@ -986,6 +1169,7 @@ ${itemsText}
 
           {currentStep === "tracking" && (
             <button
+              type="button"
               onClick={handleFinishClose}
               className="w-full bg-[#4A0E17] hover:bg-[#36070E] text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition transform active:scale-95 cursor-pointer"
             >
