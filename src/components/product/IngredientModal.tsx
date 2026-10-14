@@ -23,7 +23,6 @@ import { useToast } from "@/context/ToastContext";
 import { useUser } from "@/context/UserContext";
 import { supabase } from "@/lib/supabase/supabase";
 
-// واجهة متكاملة تجمع صيغ الفرونت إند وقاعدة البيانات معاً لمنع أخطاء TypeScript
 export interface ExtendedProduct extends Product {
   images?: string[];
   image_urls?: string[];
@@ -33,10 +32,14 @@ export interface ExtendedProduct extends Product {
   isOutOfStock?: boolean;
   base_price?: number | string;
   price?: number | string;
+  price_250g?: number | string;
+  price_500g?: number | string;
+  price_1kg?: number | string;
   title_ar?: string;
   title_en?: string;
   description_ar?: string | null;
   description_en?: string | null;
+  [key: string]: unknown;
 }
 
 interface IngredientModalProps {
@@ -69,13 +72,18 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   const { userName, userPhone } = useUser();
   const reviewInputId = useId();
 
-  // مؤشر الصورة الحالية
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  const [multiplier, setMultiplier] = useState(1);
+  // الأسعار الحقيقية من قاعدة البيانات
+  const basePrice250 = Number(product?.price_250g || product?.base_price || product?.price || 45);
+  const basePrice500 = Number(product?.price_500g || basePrice250 * 2);
+  const basePrice1Kg = Number(product?.price_1kg || basePrice250 * 4);
+
+  const [currentPrice, setCurrentPrice] = useState(basePrice250);
   const [selectedWeightLabel, setSelectedWeightLabel] = useState(
     isAr ? "ربع كيلو (250g)" : "250g Quarter"
   );
+
   const [userRating, setUserRating] = useState(5);
   const [newComment, setNewComment] = useState("");
   const [reviewerName, setReviewerName] = useState("");
@@ -84,10 +92,8 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   const [loadingReviews, setLoadingReviews] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  // استخراج قائمة الصور
   const imagesList = useMemo<string[]>(() => {
     if (!product) return ["/hero-baklava.png"];
-
     if (Array.isArray(product.images) && product.images.length > 0) {
       return product.images.filter(Boolean);
     }
@@ -99,18 +105,16 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
   }, [product]);
 
   const isSoldOut = Boolean(
-  product?.is_available === false ||
-  product?.isOutOfStock === true ||
-  product?.is_out_of_stock === true
-);
+    product?.is_available === false ||
+    product?.isOutOfStock === true ||
+    product?.is_out_of_stock === true
+  );
 
-  // إعادة ضبط الحالة بشكل غير متزامن لتفادي أخطاء React
   useEffect(() => {
     if (!product?.id) return;
-
     const resetTimer = setTimeout(() => {
       setCurrentImageIndex(0);
-      setMultiplier(1);
+      setCurrentPrice(basePrice250);
       setSelectedWeightLabel(isAr ? "ربع كيلو (250g)" : "250g Quarter");
       setUserRating(5);
       setNewComment("");
@@ -118,9 +122,8 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     }, 0);
 
     return () => clearTimeout(resetTimer);
-  }, [product?.id, isAr]);
+  }, [product?.id, isAr, basePrice250]);
 
-  // إغلاق النافذة بزر Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -129,7 +132,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  // جلب تقييمات المنتج
   useEffect(() => {
     if (!product?.id) return;
     let isMounted = true;
@@ -165,8 +167,6 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
 
   if (!product) return null;
 
-  const basePrice = Number(product.basePrice ?? product.base_price ?? product.price ?? 0);
-  const currentPrice = basePrice * multiplier;
   const productTitleAr = product.titleAr || product.title_ar || "صنف فاخر";
   const productTitleEn = product.titleEn || product.title_en || "Signature Item";
   const productDescAr = product.descriptionAr || product.description_ar;
@@ -190,8 +190,8 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
     setCurrentImageIndex((prev) => (prev === imagesList.length - 1 ? 0 : prev + 1));
   };
 
-  const handleSelectPortion = (mult: number, labelAr: string, labelEn: string) => {
-    setMultiplier(mult);
+  const handleSelectPortion = (priceVal: number, labelAr: string, labelEn: string) => {
+    setCurrentPrice(priceVal);
     setSelectedWeightLabel(isAr ? labelAr : labelEn);
   };
 
@@ -270,9 +270,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
         setNewComment("");
         setReviewerName("");
         showToast(
-          isAr
-            ? "شكراً لتقييمك! تم حفظ ونشر رأيك بنجاح 🌟"
-            : "Thank you! Review posted successfully 🌟",
+          isAr ? "شكراً لتقييمك! تم حفظ ونشر رأيك بنجاح 🌟" : "Thank you! Review posted successfully 🌟",
           "success"
         );
       } else {
@@ -293,12 +291,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
       aria-modal="true"
       aria-label={isAr ? productTitleAr : productTitleEn}
     >
-      {/* خلفية الإغلاق */}
-      <div
-        className="absolute inset-0 cursor-pointer"
-        onClick={onClose}
-        aria-label="Close modal overlay"
-      />
+      <div className="absolute inset-0 cursor-pointer" onClick={onClose} aria-label="Close modal overlay" />
 
       <div className="bg-[#FAF5ED] w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl border border-[#4A0E17]/20 max-h-[92vh] flex flex-col relative z-10 text-[#2D2321] animate-in zoom-in-95 duration-200">
         
@@ -327,7 +320,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
         {/* المحتوى الداخلي */}
         <div className="overflow-y-auto no-scrollbar p-4 sm:p-6 space-y-5 flex-1 overscroll-contain">
           
-          {/* 1. تفكيك المكونات الطبيعية */}
+          {/* 1. المكونات */}
           {productIngredients.length > 0 && (
             <section className="space-y-2" aria-label="Ingredients">
               <div className="text-center text-xs text-[#4A0E17] font-bold flex items-center justify-center gap-1.5">
@@ -351,13 +344,12 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             </section>
           )}
 
-          {/* 2. بطاقة الصورة الكبيرة المتجاوبة مع السلايدر */}
+          {/* 2. بطاقة الصورة */}
           <div className="bg-white rounded-3xl p-3 sm:p-4 shadow-2xs border border-stone-200/90 flex flex-col items-center">
-            
             <div className="relative w-full aspect-4/3 sm:aspect-16/10 rounded-2xl overflow-hidden shadow-sm border border-stone-200/60 bg-[#F7F2EB] group">
               <Image
                 src={imagesList[currentImageIndex] || "/hero-baklava.png"}
-                alt={`${isAr ? productTitleAr : productTitleEn} - ${currentImageIndex + 1}`}
+                alt={isAr ? productTitleAr : productTitleEn}
                 fill
                 priority
                 quality={90}
@@ -367,63 +359,40 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
                 }`}
               />
 
-              {/* 🌟 شارة نفدت الكمية الملكية العائمة */}
               {isSoldOut && (
                 <div className="absolute inset-0 bg-black/35 backdrop-blur-[2px] z-10 flex items-center justify-center p-4">
-                  <div className="bg-[#4A0E17]/95 border border-[#C59B27]/60 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-center animate-in zoom-in-95">
+                  <div className="bg-[#4A0E17]/95 border border-[#C59B27]/60 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-center">
                     <Clock className="w-4 h-4 text-[#E5C058] shrink-0 animate-pulse" />
                     <div>
                       <span className="text-xs sm:text-sm font-black text-amber-200 block">
                         {isAr ? "نفدت الكمية مؤقتاً" : "Temporarily Sold Out"}
                       </span>
                       <span className="text-[10px] sm:text-[11px] text-stone-200 font-medium">
-                        {isAr ? "نخبز دفعة طازجة قادمة قريباً من الفرن ✨" : "A fresh batch is baking soon in the oven"}
+                        {isAr ? "نخبز دفعة طازجة قادمة قريباً من الفرن ✨" : "A fresh batch is baking soon"}
                       </span>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* أسهم التنقل بين الصور */}
               {imagesList.length > 1 && (
                 <>
                   <button
                     type="button"
                     onClick={handlePrevImage}
                     aria-label="Previous Image"
-                    className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/45 hover:bg-[#4A0E17] text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-md active:scale-90"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/45 text-white flex items-center justify-center cursor-pointer"
                   >
-                    <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                    <ChevronLeft className="w-5 h-5 text-white" />
                   </button>
-
                   <button
                     type="button"
                     onClick={handleNextImage}
                     aria-label="Next Image"
-                    className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/45 hover:bg-[#4A0E17] text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-md active:scale-90"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/45 text-white flex items-center justify-center cursor-pointer"
                   >
-                    <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                    <ChevronRight className="w-5 h-5 text-white" />
                   </button>
-
-                  {/* شريط النقاط السفلية */}
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20 bg-black/40 backdrop-blur-xs px-2.5 py-1 rounded-full border border-white/10 shadow-xs">
-                    {imagesList.map((_, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentImageIndex(idx);
-                        }}
-                        aria-label={`Go to slide ${idx + 1}`}
-                        className={`transition-all rounded-full cursor-pointer ${
-                          currentImageIndex === idx
-                            ? "w-4 h-1.5 bg-[#E5C058]"
-                            : "w-1.5 h-1.5 bg-white/60 hover:bg-white"
-                        }`}
-                      />
-                    ))}
-                  </div>
                 </>
               )}
             </div>
@@ -435,7 +404,7 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             )}
           </div>
 
-          {/* 3. خيارات الوزن والتغليف */}
+          {/* 3. خيارات الوزن المباشرة من لوحة التحكم */}
           <div className="space-y-2">
             <label className="block text-xs font-black text-[#4A0E17]">
               {isAr ? "اختر الوزن والتغليف الملكي:" : "Select Portion & Packaging:"}
@@ -443,213 +412,111 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => handleSelectPortion(1, "ربع كيلو (250g)", "250g Quarter")}
+                onClick={() => handleSelectPortion(basePrice250, "ربع كيلو (250g)", "250g Quarter")}
                 className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
-                  multiplier === 1
+                  currentPrice === basePrice250
                     ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
                     : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
                 }`}
               >
-                <span className="block text-xs font-black">{t("portionQuarter")}</span>
-                <span className="text-[10px] text-stone-400 block mt-0.5">8 - 10 قطع</span>
+                <span className="block text-xs font-black">{isAr ? "ربع كيلو (250g)" : "250g"}</span>
+                <span className="text-[11px] font-black text-[#C59B27] block mt-1">{basePrice250} ر.س</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => handleSelectPortion(1.85, "نصف كيلو (500g)", "500g Half")}
+                onClick={() => handleSelectPortion(basePrice500, "نصف كيلو (500g)", "500g Half")}
                 className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
-                  multiplier === 1.85
+                  currentPrice === basePrice500
                     ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
                     : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
                 }`}
               >
-                <span className="block text-xs font-black">{t("portionHalf")}</span>
-                <span className="text-[10px] text-stone-400 block mt-0.5">16 - 20 قطعة</span>
+                <span className="block text-xs font-black">{isAr ? "نصف كيلو (500g)" : "500g"}</span>
+                <span className="text-[11px] font-black text-[#C59B27] block mt-1">{basePrice500} ر.س</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => handleSelectPortion(3.5, "1 كجم فاخر (صندوق خشبي)", "1 Kg Royal Box")}
+                onClick={() => handleSelectPortion(basePrice1Kg, "1 كجم فاخر (1000g)", "1 Kg Royal Box")}
                 className={`p-3 rounded-2xl text-center transition-all border cursor-pointer ${
-                  multiplier === 3.5
+                  currentPrice === basePrice1Kg
                     ? "border-2 border-[#4A0E17] bg-[#4A0E17]/5 text-[#4A0E17] shadow-xs"
                     : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"
                 }`}
               >
-                <span className="block text-xs font-black">{t("portionKilo")}</span>
-                <span className="text-[10px] text-[#C59B27] font-black block mt-0.5">بوكس إهداء فاخر</span>
+                <span className="block text-xs font-black">{isAr ? "1 كجم (1000g)" : "1 Kg"}</span>
+                <span className="text-[11px] font-black text-[#C59B27] block mt-1">{basePrice1Kg} ر.س</span>
               </button>
             </div>
           </div>
 
-          {/* 4. تجارب وتقييمات العملاء */}
+          {/* 4. تقييمات العملاء */}
           <div className="bg-white rounded-3xl p-5 border border-stone-200/90 space-y-5 shadow-2xs">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-stone-100 pb-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center">
-                    <MessageSquare className="w-4 h-4 text-[#C59B27]" />
-                  </div>
-                  <h4 className="text-xs font-black text-stone-900">
-                    {isAr ? "تقييمات وتجارب العملاء الملكية" : "Royal Customer Reviews"}
-                  </h4>
+            <div className="flex items-center justify-between border-b border-stone-100 pb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#4A0E17]/10 text-[#4A0E17] flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-[#C59B27]" />
                 </div>
-                <p className="text-[10px] text-stone-400 mt-0.5">
-                  {isAr ? "آراء حقيقية من عملائنا الذواقين" : "Genuine feedback from our valued connoisseurs"}
-                </p>
+                <h4 className="text-xs font-black text-stone-900">
+                  {isAr ? "تقييمات وتجارب العملاء الملكية" : "Royal Customer Reviews"}
+                </h4>
               </div>
-
-              <div className="flex items-center gap-2 bg-[#FAF5ED] px-3.5 py-2 rounded-2xl border border-stone-200/60">
-                <div className="flex items-center text-amber-500 gap-0.5">
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <Star key={s} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                  ))}
-                </div>
-                <span className="text-xs font-black text-[#4A0E17] font-mono">
-                  {averageRating} <span className="text-[10px] font-normal text-stone-400">/ 5.0</span>
-                </span>
-              </div>
+              <span className="text-xs font-black text-[#4A0E17] font-mono">{averageRating} / 5.0</span>
             </div>
 
             {loadingReviews ? (
-              <div className="py-8 flex flex-col items-center justify-center gap-2 text-stone-400">
-                <Loader2 className="w-5 h-5 animate-spin text-[#4A0E17]" />
-                <span className="text-[11px] font-bold">
-                  {isAr ? "جاري تحميل آراء الذواقين..." : "Loading reviews..."}
-                </span>
-              </div>
+              <div className="py-6 text-center text-xs text-stone-400">جاري التحميل...</div>
             ) : reviewsList.length === 0 ? (
-              <div className="text-center py-8 bg-[#FAF5ED]/40 rounded-2xl border border-dashed border-stone-200 space-y-1.5">
-                <Star className="w-8 h-8 mx-auto text-[#C59B27]/50 stroke-1" />
-                <p className="text-xs font-bold text-stone-700">
-                  {isAr ? "كن أول من يقيم هذا الصنف الملكي!" : "Be the first to review this royal item!"}
-                </p>
-                <p className="text-[10px] text-stone-400">
-                  {isAr ? "شاركنا انطباعك بعد التذوق أدناه." : "Share your experience below."}
-                </p>
-              </div>
+              <div className="text-center py-6 text-xs text-stone-500">كن أول من يقيم هذا الصنف الملكي!</div>
             ) : (
-              <div className="space-y-3 max-h-56 overflow-y-auto no-scrollbar overscroll-contain pr-1">
+              <div className="space-y-3 max-h-48 overflow-y-auto no-scrollbar">
                 {reviewsList.map((rev) => (
-                  <div 
-                    key={rev.id} 
-                    className="bg-[#FAF5ED]/60 p-3.5 rounded-2xl border border-stone-200/80 space-y-2 transition hover:bg-[#FAF5ED]"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-[#4A0E17] text-[#E5C058] flex items-center justify-center font-black text-[10px]">
-                          {(rev.customer_name || "ع")[0]}
-                        </div>
-                        <span className="text-xs font-black text-stone-800">{rev.customer_name}</span>
-                        <span 
-                          title={isAr ? "مشتري مؤكد" : "Verified Buyer"} 
-                          className="inline-flex items-center gap-0.5 text-[9px] bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-200/60"
-                        >
-                          <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
-                          <span>{isAr ? "مشتري مؤكد" : "Verified"}</span>
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-stone-400 font-mono">
-                        {rev.created_at ? new Date(rev.created_at).toLocaleDateString(isAr ? "ar-SA" : "en-US") : ""}
-                      </span>
+                  <div key={rev.id} className="bg-[#FAF5ED]/60 p-3 rounded-2xl border border-stone-200/80 space-y-1">
+                    <div className="flex justify-between text-xs font-bold">
+                      <span>{rev.customer_name}</span>
+                      <span className="text-[10px] text-stone-400">{new Date(rev.created_at).toLocaleDateString()}</span>
                     </div>
-
-                    <div className="flex gap-0.5">
-                      {Array.from({ length: Number(rev.rating) || 5 }).map((_, i) => (
-                        <Star key={i} className="w-3 h-3 text-amber-400 fill-amber-400" />
-                      ))}
-                    </div>
-
-                    <p className="text-xs text-stone-700 leading-relaxed bg-white/80 p-2.5 rounded-xl border border-stone-100 font-medium">
-                      {rev.comment}
-                    </p>
+                    <p className="text-xs text-stone-700">{rev.comment}</p>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* نموذج إضافة تقييم جديد */}
             <form onSubmit={handleAddReview} className="space-y-3 pt-3 border-t border-stone-100">
-              <div className="flex items-center justify-between bg-[#FAF5ED] p-3 rounded-2xl border border-stone-200/60">
-                <span className="text-xs font-black text-[#4A0E17]">
-                  {isAr ? "تقييمك الشخصي للصنف:" : "Your personal rating:"}
-                </span>
-                <div className="flex gap-1.5" role="radiogroup" aria-label="Rating">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => setUserRating(star)}
-                      aria-label={`${star} Stars`}
-                      className="p-1 cursor-pointer hover:scale-125 active:scale-95 transition-transform"
-                    >
-                      <Star
-                        className={`w-5 h-5 transition-colors ${
-                          star <= userRating ? "text-amber-400 fill-amber-400 drop-shadow-xs" : "text-stone-300"
-                        }`}
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {!userName && (
-                <input
-                  type="text"
-                  value={reviewerName}
-                  onChange={(e) => setReviewerName(e.target.value)}
-                  placeholder={isAr ? "اسمك الكريم (اختياري)..." : "Your name (optional)..."}
-                  className="w-full bg-[#FAF5ED] border border-stone-200 rounded-2xl px-3.5 py-2.5 text-xs focus:outline-hidden focus:border-[#4A0E17] font-bold"
-                />
-              )}
-
               <div className="flex gap-2">
-                <label htmlFor={reviewInputId} className="sr-only">
-                  {isAr ? "اكتب انطباعك وتجربتك بالتذوق" : "Write your review"}
-                </label>
                 <input
                   id={reviewInputId}
                   type="text"
                   required
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
-                  placeholder={isAr ? "اكتب انطباعك وتجربتك بالتذوق..." : "Write your tasting review here..."}
-                  className="flex-1 bg-[#FAF5ED] border border-stone-200 rounded-2xl px-4 py-2.5 text-xs focus:outline-hidden focus:border-[#4A0E17] font-medium"
+                  placeholder={isAr ? "اكتب انطباعك وتجربتك بالتذوق..." : "Write your tasting review..."}
+                  className="flex-1 bg-[#FAF5ED] border border-stone-200 rounded-2xl px-4 py-2.5 text-xs font-medium"
                 />
                 <button
                   type="submit"
                   disabled={submittingReview || !newComment.trim()}
-                  className="bg-[#4A0E17] hover:bg-[#36070E] active:scale-95 text-white px-5 py-2.5 rounded-2xl text-xs font-black transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-md shrink-0"
+                  className="bg-[#4A0E17] text-white px-5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  {submittingReview ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-[#C59B27]" />
-                  ) : (
-                    <Send className="w-4 h-4 text-[#C59B27]" />
-                  )}
-                  <span>{submittingReview ? (isAr ? "جاري..." : "Posting...") : isAr ? "نشر التقييم" : "Post Review"}</span>
+                  <Send className="w-4 h-4 text-[#C59B27]" />
+                  <span>{isAr ? "نشر" : "Post"}</span>
                 </button>
               </div>
             </form>
           </div>
 
-          {/* 5. تنبيه مسببات الحساسية */}
-          <div className="flex items-start gap-2.5 p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-[11px] text-amber-900">
+          <div className="flex items-start gap-2.5 p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl text-[11px] text-amber-900">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">
-              {isAr
-                ? "تنبيه مسببات الحساسية: يحتوي هذا الصنف على الفستق الحلبي، المكسرات، ومشتقات القمح والحليب والسمن البقري الطبيعي."
-                : "Allergen Warning: Contains tree nuts, wheat, dairy, and natural ghee."}
-            </span>
+            <span>{isAr ? "تنبيه مسببات الحساسية: يحتوي على فستق ومكسرات ومشتقات القمح." : "Allergen Warning."}</span>
           </div>
 
         </div>
 
-        {/* شريط الإضافة للسلة النهائي */}
+        {/* شريط السعر النهائي */}
         <div className="p-4 bg-[#4A0E17] text-white border-t border-[#C59B27]/30 flex items-center justify-between gap-4 shadow-lg">
           <div>
-            <span className="block text-[10px] text-stone-300 font-bold uppercase tracking-wider">
-              {t("total")}
-            </span>
+            <span className="block text-[10px] text-stone-300 font-bold uppercase tracking-wider">{t("total")}</span>
             <div className="flex items-baseline gap-1">
               <span className="text-2xl font-black text-white">{currentPrice.toFixed(2)}</span>
               <span className="text-xs font-bold text-[#E5C058]">{t("currency")}</span>
@@ -657,12 +524,9 @@ export const IngredientModal: React.FC<IngredientModalProps> = ({ product, onClo
           </div>
 
           {isSoldOut ? (
-            <div
-              className="flex-1 bg-stone-800/90 text-amber-200/80 border border-amber-500/30 font-bold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-inner select-none cursor-not-allowed opacity-90 text-xs sm:text-sm"
-              title={isAr ? "هذا الصنف غير متوفر حالياً" : "Currently out of stock"}
-            >
-              <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>{isAr ? "نفدت الكمية الملكية (انتظرونا قريباً)" : "Sold Out (Coming Soon)"}</span>
+            <div className="flex-1 bg-stone-800 text-amber-200 font-bold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 text-xs">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <span>{isAr ? "نفدت الكمية الملكية" : "Sold Out"}</span>
             </div>
           ) : (
             <button
